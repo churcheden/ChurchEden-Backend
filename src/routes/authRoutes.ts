@@ -31,7 +31,7 @@ const router = Router();
 // Manual auth
 router.post('/register', authLimitter, validateBody(registerSchema), registerUser);
 router.post('/login', authLimitter, validateBody(loginSchema), loginUser);
-router.post('/logout', authenticateToken as RequestHandler, logoutUser as RequestHandler);
+router.post('/logout', logoutUser as RequestHandler);
 router.get('/me', authenticateToken as RequestHandler, getCurrentUser as RequestHandler);
 router.post('/refresh', validateBody(refreshTokenSchema), refreshToken);
 router.post('/forgot-password', passwordLimitter, validateBody(forgotPasswordSchema), forgotPassword);

@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -16,504 +11,69 @@ enum LoginProvider {
   GOOGLE
 }
 
-enum Frequency {
-  ONCE
-  DAILY
-  WEEKLY
-}
-
-// User model
 model User {
   id String @id @default(uuid())
-  email String  @unique
+  email String @unique
   password String
-  
-  //Complete Profile
+
   fullName String?
-  college String  @default("College Of Humanities and Social sciences")
-  facultyId String?
-  faculty Faculty? @relation(fields: [facultyId], references: [id])
-  programId String?
-  program Program? @relation(fields: [programId], references: [id]) 
-  level String @default("Level 100")
-  semester String @default("Semester 1")
 
-  isProfileComplete Boolean @default(false)
-
-  //Auth
   googleId String? @unique
   loginProvider LoginProvider @default(EMAIL)
-  isVerified Boolean   @default(false)
+  isVerified Boolean @default(false)
   verifyToken String?
   verifyTokenExpires DateTime?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
   resetToken String?
   resetTokenExpires DateTime?
   refreshToken String?
   refreshTokenExpires DateTime?
+  lastLogin DateTime?
 
-  //Subscrition
-  isPremium     Boolean  @default(false)
-  premiumSince  DateTime?
+  isPremium Boolean @default(false)
+  premiumSince DateTime?
   premiumExpiry DateTime?
+  paystackSubCode String?
+  paystackEmailToken String?
+  subscriptionStatus String?
 
-  //Activity
-  lastLogin          DateTime?
-  dailyAiMessages    Int       @default(0)
-  aiMessageResetAt   DateTime  @default(now())
-  
-  // Dashboard
-  rankScore Int @default(0)
-  // Denormalized overall accuracy (sum(sumAccuracy)/sum(quizCount) across UserCourses) —
-  // kept in sync alongside rankScore so /rankings can show real per-user accuracy
-  // without an aggregate join on every leaderboard request.
-  overallAccuracy Float @default(0)
-  userQuestions UserQuestion[]
-  userCourses UserCourse[]
-  quizSession QuizSession[]
-  streaks Streak?
-  studyActivities StudyActivity[]
-  pushSubscription PushSubscription[]
-  reminder Reminder[]
-  transaction Transaction[]
-  subscription Subscription[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // Sources
+  transactions Transaction[]
   sources Source[]
-  audioSummaries AudioSummary[]
 
-  //Chats
-  chats        Chat[]
-  summaries    Summary[]
-  flashcardSets FlashcardSet[]
-
-  @@index([college])          
-  @@index([college, rankScore])
-  @@index([rankScore])
   @@index([isPremium])
   @@map("Users")
 }
 
-// Faculty model
-model Faculty {
-  id String @id @default(uuid())
-  name String @unique
-  program Program[]
-  user User[]
-  
-  //Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Dashboard
-  courses Course[]
-  userCourses UserCourse[]
-
-  // College knowledge base
-  collegeChunks CollegeChunk[]
-
-  @@map("Faculties")
-}
-
-// Program model
-model Program {
-  id String @id @default(uuid())
-  name String @unique
-  degree String
-  facultyId String
-  faculty Faculty @relation(fields: [facultyId], references: [id])
-  user User[]
-
-  //Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Dashboard
-  userCourses UserCourse[]
-
-  @@unique([name, facultyId])
-  @@map("Programs")
-}
-
-// Question model
-model Question{
-  id String @id @default(uuid())
-  courseId String
-  courseCode String
-  courseName String
-  question String
-  options String[]
-  correctAnswer String
-  correctExplanation String
-  explanationOne String
-  explanationTwo String
-  explanationThree String
-
-  userQuestion UserQuestion[]
-  course Course @relation(fields: [courseId], references: [id])
-
-  @@unique([courseId, question])
-  @@index([courseId])  
-  @@index([courseCode])
-  @@index([courseId, correctAnswer])                  
-  @@map("Questions")
-}
-
-// User question model
-model UserQuestion {
-  id String @id @default(uuid())
-  userId String
-  questionId String
-  isWeakPoint Boolean @default(false)
-  consecutiveCorrect Int @default(0)
-  lastAttempted DateTime
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  question Question @relation(fields: [questionId], references: [id])
-
-  @@index([userId])   
-  @@index([isWeakPoint])                
-  @@index([userId, isWeakPoint])
-  @@unique([userId, questionId])
-  @@map("User Questions")
-}
-
-// Course model
-model Course {
-  id String @id @default(uuid())
-  courseCode String 
-  courseName String
-  facultyId String
-  totalQuestions Int?
-  level String @default("Level 100")
-  semester String @default("Semester 1")
-  faculty Faculty @relation(fields: [facultyId], references: [id])
-  questions Question[]
-  userCourses UserCourse[]
-  quizSessions QuizSession[]
-
-  @@unique([courseCode, courseName, facultyId])
-  @@index([facultyId])
-  @@index([facultyId, level, semester])
-  @@map("Courses")
-}
-
-// User course model
-model UserCourse {
-  id String @id @default(uuid())
-  userId String
-  courseId String
-  facultyId String
-  programId String
-  xpEarned Int @default(0)
-  correctQuestions Int @default(0)
-  totalQuestions Int @default(0)
-  quizCount Int @default(0)
-  sumAccuracy Float @default(0)
-  enrolledAt DateTime @default(now())
-  lastAttempted DateTime?
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  program Program @relation(fields: [programId], references: [id])
-  faculty Faculty @relation(fields: [facultyId], references: [id])
-  course Course @relation(fields: [courseId], references: [id])
-
-  @@index([userId])       
-  @@index([facultyId])
-  @@unique([userId, courseId])
-  @@map("User Courses")
-}
-
-// Mode options
-enum Mode {
-  FLOW
-  EXAM
-}
-
-// Quiz session model
-model QuizSession {
-  id String @id @default(uuid())
-  userId String
-  courseId String
-  mode Mode
-  questionsAnswered Int
-  correctQuestions Int
-  score Int?
-  createdAt DateTime @default(now())
-  completedAt DateTime?
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  course Course @relation(fields: [courseId], references: [id]) 
-
-  @@index([userId])       
-  @@index([userId, mode])     
-  @@index([userId, completedAt])
-  @@map("Quiz Sessions")
-}
-
-model Streak {
-  id             String   @id @default(uuid())
-  userId         String   @unique
-  currentStreak  Int      @default(1)
-  longestStreak  Int      @default(1)
-  lastActiveDate DateTime
-
-  // Milestone flags — tracks streak progression
-  isDayTwo          Boolean @default(false)  // 2 days
-  isWeeklyWarrior   Boolean @default(false)  // 7 days
-  isBiWeekly        Boolean @default(false)  // 14 days
-  isTriWeekly       Boolean @default(false)  // 21 days
-  isMonthlyLegend   Boolean @default(false)  // 30 days
-  isDoubleMonth     Boolean @default(false)  // 60 days
-  isTripleMonth     Boolean @default(false)  // 90 days
-  isQuadMonthly     Boolean @default(false)  // 120 days
-  isSemesterChamp   Boolean @default(false)  // 180 days (full semester)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([currentStreak])
-  @@map("Streaks")
-}
-
-model StudyActivity {
-  id        String   @id @default(uuid())
-  userId    String
-  date      DateTime 
-  quizCount Int      @default(1)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, date]) 
-  @@index([userId, date])
-  @@map("Study Activities")
-}
-
-model PushSubscription {
-  id          String   @id @default(uuid())
-  userId      String
-  endpoint    String   @unique
-  p256dh      String
-  auth        String
-  isActive    Boolean @default(true)
-
-  lastUsedAt  DateTime?
-  expiresAt   DateTime?
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  @@index([userId, isActive])
-  @@map("Push Subscription")
-}
-
-model Reminder {
-  id        String @id @default(uuid())
-  userId    String
-  title     String
-  remindAt  DateTime
-  frequency Frequency @default(ONCE)
-  note      String?
-  sent      Boolean @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("Reminders")
-}
-
 model Transaction {
-  id                String @id @default(uuid())
-  userId            String
-  reference         String @unique
-  amount            Decimal
-  status            String // pending, success
-  authorizationUrl  String
-  createdAt         DateTime @default(now())
+  id String @id @default(uuid())
+  userId String
+  reference String @unique
+  amount Decimal
+  status String
+  authorizationUrl String
+  createdAt DateTime @default(now())
 
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([reference])
   @@map("Transactions")
 }
 
-model Subscription {
-  id                  String    @id @default(uuid())
-  userId              String    @unique
-  paystackSubCode     String    
-  paystackEmailToken  String    
-  status              String    // active, cancelled
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
-  user                User      @relation(fields: [userId], references: [id])
-
-  @@map("Subscriptions")
-}
-
 model Source {
-  id  String      @id @default(uuid())
-  sourceName      String @unique
-  userId          String
-  chatId          String
-  content         String
-  uploadedAt      DateTime @default(now())
-  embeddingDone   Boolean @default(true)
-  chunks         DocumentChunk[]
-
-  chat            Chat? @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  user            User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  //Timestamps
-  createdAt DateTime @default(now())
-  @@index([sourceName])
-  @@unique([chatId, userId])
-  @@map("Sources")
-}
-
-model DocumentChunk {
-  id        String   @id @default(uuid())
-  sourceId  String
-  content   String   @db.Text
-  embedding Unsupported("vector(768)")
-  source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-
-  @@index([sourceId])
-  @@map("Document Chunks")
-}
-
-model CollegeChunk {
-  id         String   @id @default(uuid())
-  facultyId  String
-  semester   String
-  courseName String
-  sourceName String
-  content    String   @db.Text
-  embedding  Unsupported("vector(768)")
-  createdAt  DateTime @default(now())
-
-  faculty    Faculty  @relation(fields: [facultyId], references: [id], onDelete: Cascade)
-
-  @@index([facultyId, semester])
-  @@map("College Chunks")
-}
-
-model Chat {
-  id          String    @id @default(cuid())
-  userId      String
-  title       String?
-  isSummaryAllowed       Boolean @default(false)
-  aiQuizzesDone          Int     @default(0)
-  aiAudioDone            Int     @default(0)
-  aiFlashcardsDone       Int     @default(1)
-  totalQuestionsAnswered Int     @default(0)
-  totalCorrectAnswers    Int     @default(0)
-
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages      Message[]
-  upload        Source[]
-  summaries     Summary[]
-  flashcardSets FlashcardSet[]
-  AiQuestions   AiQuestion[]
-  audioSummary  AudioSummary[]
-
-  @@map("Chats")
-}
-
-enum MessageRole {
-  USER
-  ASSISTANT
-}
-
-model Message {
-  id              String        @id @default(cuid())
-  chatId          String
-  role            MessageRole
-  content         String        @db.Text
-  createdAt       DateTime      @default(now())
-
-  conversation    Chat  @relation(fields: [chatId], references: [id], onDelete: Cascade)
-}
-
-model Summary {
-  id          String   @id @default(cuid())
-  userId      String
-  chatId      String
-  mode        String
-  sourceIds   String[]
-  content     String   @db.Text
-  createdAt   DateTime @default(now())
-
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chat        Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
-
-  @@index([userId, chatId])
-  @@map("Summaries")
-}
-
-model FlashcardSet {
-  id         String      @id @default(cuid())
-  userId     String
-  chatId     String
-  sourceIds  String[]
-  createdAt  DateTime    @default(now())
-
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  chat       Chat        @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  cards      Flashcard[]
-
-  @@index([userId, chatId])
-  @@map("Flashcard Sets")
-}
-
-model Flashcard {
-  id         String       @id @default(cuid())
-  setId      String
-  type       String
-  front      String       @db.Text
-  back       String       @db.Text
-  difficulty Int
-  examTip    String?
-  position   Int
-
-  set        FlashcardSet @relation(fields: [setId], references: [id], onDelete: Cascade)
-
-  @@index([setId])
-  @@map("Flashcards")
-}
-
-model AiQuestion{
   id String @id @default(uuid())
-  chatId String
-  question String
-  options String[]
-  correctAnswer String
-  correctExplanation String
-  explanationOne String
-  explanationTwo String
-  explanationThree String
-
-  createdAt   DateTime @default(now())
-
-  chat Chat @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  @@unique([chatId, question])
-  @@map("AiQuestions")
-}
-model AudioSummary {
-  id        String   @id @default(uuid())
-  chatId    String
-  userId    String
+  userId String
+  sourceName String
+  content String @db.Text
+  uploadedAt DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  summary     String? 
-  podcastUrl  String?  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Relations
-  chat        Chat      @relation(fields: [chatId], references: [id], onDelete: Cascade)
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("studios")
+  @@unique([userId, sourceName])
+  @@index([userId])
+  @@map("Sources")
 }

@@ -5,28 +5,26 @@ import { upload } from "../config/upload.js";
 
 const router = Router();
 
-router.post('/upload-single-source/:chatId',
-     authenticateToken as RequestHandler, 
-     upload.single('file'), 
+router.post('/upload-single-source',
+     authenticateToken as RequestHandler,
+     upload.single('file'),
      uploadSingleSource as RequestHandler
 );
 
-router.post('/upload-multiple-source/:chatId',
-     authenticateToken as RequestHandler, 
-     upload.array('files', 10), 
+router.post('/upload-multiple-source',
+     authenticateToken as RequestHandler,
+     upload.array('files', 10),
      uploadMutipleSource as RequestHandler,
 );
 
 router.post('/delete-single-source/:sourceId',
-     authenticateToken as RequestHandler, 
-     upload.single('file'), 
+     authenticateToken as RequestHandler,
      deleteSingleSource as RequestHandler
 );
 
-router.post('/delete-multiple-source/:sourceId',
-     authenticateToken as RequestHandler, 
-     upload.array('files', 10), 
-     deleteMutipleSource as RequestHandler,
+router.post('/delete-multiple-source',
+     authenticateToken as RequestHandler,
+     deleteMutipleSource as RequestHandler
 );
 
 export default router;

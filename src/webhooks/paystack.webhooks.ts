@@ -196,18 +196,12 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                 const emailToken = data.subscription?.email_token;
 
                 if (subCode && emailToken) {
-                    await prisma.subscription.upsert({
-                        where: { userId: user.id },
-                        create: {
-                            userId: user.id,
+                    await prisma.user.update({
+                        where: { id: user.id },
+                        data: {
                             paystackSubCode: subCode,
                             paystackEmailToken: emailToken,
-                            status: 'active',
-                        },
-                        update: {
-                            paystackSubCode: subCode,
-                            paystackEmailToken: emailToken,
-                            status: 'active',
+                            subscriptionStatus: 'active',
                         },
                     });
                 }
@@ -231,19 +225,14 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
 
                 const expiryDate = user.premiumExpiry ?? new Date();
 
-                await Promise.all([
-                    prisma.user.update({
-                        where: { id: user.id },
-                        data: {
-                            isPremium: false,
-                            premiumExpiry: expiryDate,
-                        },
-                    }),
-                    prisma.subscription.updateMany({
-                        where: { userId: user.id },
-                        data: { status: 'cancelled' },
-                    }),
-                ]);
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: {
+                        isPremium: false,
+                        premiumExpiry: expiryDate,
+                        subscriptionStatus: 'cancelled',
+                    },
+                });
 
                 await CacheService.invalidatePattern(`user:${user.id}:*`);
 
@@ -262,9 +251,9 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
 
                 const expiryDate = user.premiumExpiry ?? new Date(Date.now() + SUBSCRIPTION_PERIOD_MS);
 
-                await prisma.subscription.updateMany({
-                    where: { userId: user.id },
-                    data: { status: 'non_renewing' },
+                await prisma.user.update({
+                    where: { id: user.id },
+                    data: { subscriptionStatus: 'non_renewing' },
                 });
 
                 const content = subscriptionNotRenewEmail(user.fullName, expiryDate, env.FRONTEND_URL);

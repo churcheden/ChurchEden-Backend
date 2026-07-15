@@ -167,11 +167,11 @@ class PaymentService {
     };
 
     async cancelSubscription(userId: string) {
-        const subscription = await prisma.subscription.findUnique({
-            where: { userId }
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
         });
 
-        if (!subscription) {
+        if (!user?.paystackSubCode || !user.paystackEmailToken) {
             throw new AppError('No active subscription found', 404, 'NO_SUBSCRIPTION')
         };
 
@@ -183,8 +183,8 @@ class PaymentService {
             },
             body: JSON.stringify(
                 {
-                    code: subscription.paystackSubCode ,
-                    token: subscription.paystackEmailToken,
+                    code: user.paystackSubCode,
+                    token: user.paystackEmailToken,
                 }
             ),
         });
@@ -195,24 +195,16 @@ class PaymentService {
             throw new AppError(`Paystack error: ${data.message}`, 400, 'PAYSTACK_ERROR')
         };
 
-        await prisma.subscription.update({
-            where: {
-                userId: userId,
-            },
-            data: {
-                status: 'cancelled'
-            },
-        });
-
         await CacheService.invalidatePattern(cacheKeys.user(userId));
 
         const updatedUser = await prisma.user.update({
-            where:{
+            where: {
                 id: userId,
             },
             data: {
                 isPremium: false,
                 premiumExpiry: new Date(),
+                subscriptionStatus: 'cancelled',
             },
         });
 

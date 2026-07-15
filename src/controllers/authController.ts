@@ -11,10 +11,22 @@ import { wideLogger } from "../utils/wideLogger.js";
 import { catchAsync } from "../utils/catchAsync.js";
 import { AppError } from "../utils/AppError.js";
 import { CacheService, cacheKeys } from "../utils/cache.js";
+import {
+    clearAuthCookies,
+    issueAuthTokens,
+    revokeUserSession,
+    setAuthCookies,
+} from "../utils/authSession.js";
+
+const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const getRefreshTokenFromRequest = (req: Request) =>
+    req.body.refreshToken ?? req.cookies?.refreshToken;
 
 // Register User
 export const registerUser = catchAsync(async(req: Request, res: Response) => {
-        const { email, password } = req.body;
+        const { email: rawEmail, password } = req.body;
+        const email = rawEmail.trim().toLowerCase();
 
         const existingUser = await prisma.user.findUnique({
             where: { email }
@@ -50,7 +62,7 @@ export const registerUser = catchAsync(async(req: Request, res: Response) => {
                 where: { id: user.id },
                 data: {
                     refreshToken: hashedRt,
-                    refreshTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                    refreshTokenExpires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
                     lastLogin: new Date(),
                 }
             });
@@ -58,31 +70,30 @@ export const registerUser = catchAsync(async(req: Request, res: Response) => {
             return { newUser: user, accessToken: at, refreshToken: rt };
         });
 
-        res.cookie('token', accessToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 15 * 60 * 1000 
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000 
-        });
-
-        await emailService.sendVerificationOTPEmail(newUser.email, otp, newUser.email.split('@')[0]);
+        setAuthCookies(res, accessToken, refreshToken);
 
         const firstName = newUser.email.split('@')[0] ?? 'there';
-        await emailService.sendWelcomeEmail({
-            firstName,
+        const { otpSent } = await emailService.sendRegistrationEmails({
             email: newUser.email,
+            otp,
+            firstName,
             signInUrl: `${env.FRONTEND_URL}/onboarding/sign-in`,
         });
+
+        if (!otpSent) {
+            await prisma.user.delete({ where: { id: newUser.id } });
+            clearAuthCookies(res);
+            wideLogger.addCtx('register_result', 'verification_email_failed');
+            throw new AppError(
+                'Could not send verification email. Please try again.',
+                503,
+                'EMAIL_SEND_FAILED',
+            );
+        }
         
         wideLogger.addCtx('user_id', newUser.id);
         wideLogger.addCtx('action', 'user_registered');
+        wideLogger.addCtx('verification_email_sent_to', newUser.email);
         return res.status(201).json({
             status: 'success',
             message: 'Account created! Check your email for the verification code.',
@@ -131,40 +142,12 @@ export const loginUser = catchAsync(async(req: Request, res: Response) => {
 
         wideLogger.addCtx('user_id', user.id);
 
-        const accessToken = await generateAccessToken({
+        const { accessToken, refreshToken } = await issueAuthTokens({
             id: user.id,
             email: user.email,
         });
 
-        const refreshToken = await generateRefreshToken({
-            id: user.id,
-            email: user.email,
-        });
-
-        const hashedRefreshToken = await hashPassword(refreshToken)
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                refreshToken: hashedRefreshToken,
-                refreshTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                lastLogin: new Date()
-            }
-        });
-
-        res.cookie('token', accessToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 15 * 60 * 1000
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
+        setAuthCookies(res, accessToken, refreshToken);
 
         wideLogger.addCtx('login_success', true);
         return res.status(200).json({
@@ -273,16 +256,14 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
 // Refresh Token
 export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         wideLogger.addCtx('action', 'refresh_token');
-        // Accept from body (email/password login) or cookie (OAuth sessions).
-        const refreshToken: string | undefined =
-            req.body.refreshToken ?? req.cookies?.refreshToken;
+        const refreshTokenValue = getRefreshTokenFromRequest(req);
 
-        if(!refreshToken) {
+        if(!refreshTokenValue) {
             wideLogger.addCtx('refresh_token_result', 'missing_token');
             throw new AppError("Refresh token required!", 401, 'MISSING_TOKEN');
         };
 
-        const payload = await verifyRefreshToken(refreshToken);
+        const payload = await verifyRefreshToken(refreshTokenValue);
 
         const user = await prisma.user.findUnique({
             where: {
@@ -297,49 +278,20 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         };
 
         wideLogger.addCtx('user_id', user.id);
-        const isMatch = await comparePasswords(refreshToken, user.refreshToken!);
+        const isMatch = await comparePasswords(refreshTokenValue, user.refreshToken!);
 
         if(!isMatch) {
             wideLogger.addCtx('refresh_token_result', 'mismatch');
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         };
 
-        const newAccessToken = await generateAccessToken({
-            id: user.id,
-            email: user.email,
-        });
+        const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
+            await issueAuthTokens({
+                id: user.id,
+                email: user.email,
+            });
 
-        // Rotate the refresh token on every use: extends the 7-day window for
-        // active users (instead of forcing a re-login exactly 7 days after the
-        // original login) and invalidates the old token.
-        const newRefreshToken = await generateRefreshToken({
-            id: user.id,
-            email: user.email,
-        });
-
-        const hashedRefreshToken = await hashPassword(newRefreshToken);
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                refreshToken: hashedRefreshToken,
-                refreshTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-            }
-        });
-
-        res.cookie('token', newAccessToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 15 * 60 * 1000
-        });
-
-        res.cookie('refreshToken', newRefreshToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
+        setAuthCookies(res, newAccessToken, newRefreshToken);
 
         wideLogger.addCtx('refresh_token_result', 'success');
         return res.status(200).json({
@@ -381,7 +333,6 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
                 id: true,
                 email: true,
                 fullName: true,
-                college: true,
                 createdAt: true,
             },
         });
@@ -389,52 +340,26 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         const isNewUser = dbUser && (Date.now() - dbUser.createdAt.getTime()) < 120_000;
         if (isNewUser && dbUser) {
             const firstName = dbUser.fullName?.split(' ')[0] ?? dbUser.email.split('@')[0] ?? 'there';
-            await emailService.sendWelcomeEmail({
+            const welcomeSent = await emailService.sendWelcomeEmail({
                 firstName,
                 ...(dbUser.fullName ? { fullName: dbUser.fullName } : {}),
                 email: dbUser.email,
-                church: dbUser.college,
                 signInUrl: `${frontendUrl}/onboarding/sign-in`,
             });
+
+            wideLogger.addCtx('welcome_email_sent_to', dbUser.email);
+            wideLogger.addCtx('welcome_email_sent', welcomeSent);
         }
 
-        const accessToken = await generateAccessToken({
+        const { accessToken, refreshToken } = await issueAuthTokens({
             id: user.id,
             email: user.email,
         });
 
-        const refreshToken = await generateRefreshToken({
-            id: user.id,
-            email: user.email,
-        });
-
-        const hashedRefreshToken = await hashPassword(refreshToken);
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                refreshToken: hashedRefreshToken,
-                refreshTokenExpires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-                lastLogin: new Date()
-            }
-        });
-
-        res.cookie('token', accessToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 15 * 60 * 1000 
-        });
-
-        res.cookie('refreshToken', refreshToken, {
-            httpOnly: true,
-            secure: env.APP_STAGE === 'production',
-            sameSite: 'strict',
-            maxAge: 604800000 
-        });
+        setAuthCookies(res, accessToken, refreshToken);
 
         wideLogger.addCtx('google_auth_result', 'success');
-        return res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}`);
+        return res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
 });
 
 // Verify Email with OTP
@@ -521,9 +446,23 @@ export const resendVericationEmail = catchAsync(async(req: AuthenticatedRequest,
             }
         });
 
-        await emailService.sendVerificationOTPEmail(user.email, otp, user.email.split('@')[0]);
+        const otpSent = await emailService.sendVerificationOTPEmail(
+            user.email,
+            otp,
+            user.email.split('@')[0],
+        );
+
+        if (!otpSent) {
+            wideLogger.addCtx('resend_verification_result', 'email_send_failed');
+            throw new AppError(
+                'Could not send verification email. Please try again later.',
+                503,
+                'EMAIL_SEND_FAILED',
+            );
+        }
 
         wideLogger.addCtx('resend_verification_result', 'success');
+        wideLogger.addCtx('verification_email_sent_to', user.email);
         return res.status(200).json({
             message: 'Verification OTP sent to your email!'
         });
@@ -532,35 +471,35 @@ export const resendVericationEmail = catchAsync(async(req: AuthenticatedRequest,
 // Logout
 export const logoutUser = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'user_logout');
-    if(req.user) {
-        const userId = req.user?.id;
-        wideLogger.addCtx('user_id', userId);
 
-        await prisma.user.update({
-        where: { id: userId },
-        data: {
-            refreshToken: null,
-            refreshTokenExpires: null,
+    let userId = req.user?.id;
+
+    if (!userId) {
+        const refreshTokenValue = getRefreshTokenFromRequest(req);
+
+        if (refreshTokenValue) {
+            try {
+                const payload = await verifyRefreshToken(refreshTokenValue);
+                userId = payload.id;
+            } catch {
+                wideLogger.addCtx('logout_result', 'invalid_refresh_token');
+            }
         }
-        });
-    };
+    }
 
-    res.clearCookie('token', {
-        httpOnly: true,
-        secure: env.APP_STAGE === 'production',
-        sameSite: 'strict',
-    });
+    if (userId) {
+        wideLogger.addCtx('user_id', userId);
+        await revokeUserSession(userId);
+        await CacheService.delete(cacheKeys.userMe(userId));
+        await CacheService.invalidatePattern(`user:${userId}:*`);
+    }
 
-    res.clearCookie('refreshToken', {
-        httpOnly: true,
-        secure: env.APP_STAGE === 'production',
-        sameSite: 'strict',
-    });
+    clearAuthCookies(res);
 
     wideLogger.addCtx('logout_result', 'success');
     return res.status(200).json({
         status: 'success',
-        message: "User logged out succesfully!",
+        message: "User logged out successfully!",
     });
 });
 
