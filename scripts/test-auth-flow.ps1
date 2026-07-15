@@ -1,4 +1,8 @@
-$base = "http://localhost:3000"
+param(
+    [string]$BaseUrl = "https://api.churcheden.app"
+)
+
+$base = $BaseUrl.TrimEnd('/')
 $email = "auth.test.$(Get-Date -Format 'yyyyMMddHHmmss')@churcheden.test"
 $password = "TestPass123"
 $results = @()

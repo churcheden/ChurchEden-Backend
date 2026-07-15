@@ -19,7 +19,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 const corsOptions: cors.CorsOptions = {
-    origin: env.FRONTEND_URL || 'http://localhost:5173',
+    origin: env.FRONTEND_URL || 'https://churcheden.app',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type', 'x-client-platform'],

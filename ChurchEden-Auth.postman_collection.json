@@ -2,11 +2,11 @@
   "info": {
     "_postman_id": "churcheden-auth-2026",
     "name": "ChurchEden Backend — Auth API",
-    "description": "Authentication API for ChurchEden — manual email/password sign-up, Google OAuth, email verification, password reset, and session management.\n\n**Base URL:** `http://localhost:3000`\n\n**Auth flow (manual sign-up):**\n1. `POST /api/v1/auth/register` — creates account, sends OTP + welcome email\n2. `POST /api/v1/auth/verify-email` — verify with 6-digit OTP from email\n3. `POST /api/v1/auth/login` — sign in (blocked until email verified)\n4. `GET /api/v1/auth/me` — current user (Bearer token)\n5. `POST /api/v1/auth/refresh` — rotate tokens\n6. `POST /api/v1/auth/logout` — invalidate session\n\n**Google OAuth:**\n1. `GET /api/v1/auth/google/url` — get redirect URL\n2. Open `GET /api/v1/auth/google` in browser\n3. Callback redirects to `{FRONTEND_URL}/auth/callback?accessToken=...`\n\n**Variables:** `baseUrl`, `accessToken`, `refreshToken`, `testEmail`, `testPassword`",
+    "description": "Authentication API for ChurchEden — manual email/password sign-up, Google OAuth, email verification, password reset, and session management.\n\n**Base URL:** `https://api.churcheden.app`\n\n**Auth flow (manual sign-up):**\n1. `POST /api/v1/auth/register` — creates account, sends OTP + welcome email\n2. `POST /api/v1/auth/verify-email` — verify with 6-digit OTP from email\n3. `POST /api/v1/auth/login` — sign in (blocked until email verified)\n4. `GET /api/v1/auth/me` — current user (Bearer token)\n5. `POST /api/v1/auth/refresh` — rotate tokens\n6. `POST /api/v1/auth/logout` — invalidate session\n\n**Google OAuth:**\n1. `GET /api/v1/auth/google/url` — get redirect URL\n2. Open `GET /api/v1/auth/google` in browser\n3. Callback redirects to `{FRONTEND_URL}/auth/callback?accessToken=...`\n\n**Variables:** `baseUrl`, `accessToken`, `refreshToken`, `testEmail`, `testPassword`",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "baseUrl", "value": "https://api.churcheden.app" },
     { "key": "accessToken", "value": "" },
     { "key": "refreshToken", "value": "" },
     { "key": "testEmail", "value": "you@yourchurch.com" },
