@@ -72,8 +72,6 @@ const envSchema = z.object({
     SUBSCRIPTION_AMOUNT_KOBO: z.string().default('2000'),
 
     PAYSTACK_PLAN_CODE: z.string().startsWith('PLN_'),
-
-    GEMINI_API_KEY: z.string(),
 });
 
 // IMPORT SCHEMA

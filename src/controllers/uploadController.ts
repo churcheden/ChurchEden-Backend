@@ -5,7 +5,6 @@ import { wideLogger } from "../utils/wideLogger.js";
 import { catchAsync } from "../utils/catchAsync.js";
 import { AppError } from "../utils/AppError.js";
 import { extractText } from "../utils/textExtractor.js";
-import { embedSourceInBackground } from "../services/embedding.service.js";
 
 // Single Source upload
 export const uploadSingleSource = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
@@ -50,9 +49,6 @@ export const uploadSingleSource = catchAsync(async (req: AuthenticatedRequest, r
             },
         });
 
-        embedSourceInBackground(source.id, source.content)
-        .catch(err => console.error(`Embedding failed: ${err.message}`));
-
         await prisma.chat.update({
             where: {
                 id: chatId,
@@ -82,9 +78,6 @@ export const uploadSingleSource = catchAsync(async (req: AuthenticatedRequest, r
             content: true,
         },
     });
-
-    embedSourceInBackground(source.id, source.content)
-    .catch(err => console.error(`Embedding failed: ${err.message}`));
 
     await prisma.chat.update({
         where: {
@@ -145,9 +138,6 @@ export const uploadMutipleSource = catchAsync(async (req: AuthenticatedRequest, 
         });
 
         sourceIds.push(source.id);
-
-        embedSourceInBackground(source.id, source.content)
-        .catch(err => console.error(`Embedding failed: ${err.message}`));
     };
 
     await prisma.chat.update({
