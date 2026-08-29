@@ -4,7 +4,6 @@ import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import { wideLogger } from "../utils/wideLogger.js";
 import { catchAsync } from "../utils/catchAsync.js";
 import { AppError } from "../utils/AppError.js";
-import { extractText } from "../utils/textExtractor.js";
 
 async function getOwnedSource(sourceId: string, userId: string) {
     const source = await prisma.source.findFirst({
@@ -31,38 +30,16 @@ export const uploadSingleSource = catchAsync(async (req: AuthenticatedRequest, r
         throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
     }
 
-    if (url) {
-        const content = await extractText(undefined, undefined, url);
-        const source = await prisma.source.create({
-            data: {
-                sourceName: url,
-                userId,
-                content: content.text,
-            },
-            select: {
-                id: true,
-                sourceName: true,
-                content: true,
-            },
-        });
-
-        return res.status(200).json({
-            status: 'success',
-            message: 'URL source uploaded successfully!',
-            data: source,
-        });
-    }
 
     if (!file) {
         throw new AppError('File or URL is required!', 400, 'MISSING_FILE');
     }
 
-    const content = await extractText(file.buffer, mimeType);
     const source = await prisma.source.create({
         data: {
             sourceName: file.originalname,
             userId,
-            content: content.text,
+            content: null,
         },
         select: {
             id: true,
@@ -92,12 +69,11 @@ export const uploadMutipleSource = catchAsync(async (req: AuthenticatedRequest, 
     const sourceIds: string[] = [];
 
     for (const file of files) {
-        const content = await extractText(file.buffer, file.mimetype);
         const source = await prisma.source.create({
             data: {
                 sourceName: file.originalname,
                 userId,
-                content: content.text,
+                content: null,
             },
         });
 

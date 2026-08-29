@@ -23,7 +23,7 @@ const envSchema = z.object({
 
     NPM_PACKAGE_VERSION: z.string().default(process.env.npm_package_version ?? 'Unknown'),
 
-    PORT: z.coerce.number().positive().default(3000),
+    PORT: z.coerce.number().positive().default(8080),
 
     DATABASE_URL: z.string().startsWith('postgresql://'),
 
