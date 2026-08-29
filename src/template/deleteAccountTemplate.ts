@@ -8,152 +8,133 @@ export const deleteAccountTemplate = (name: string, deletionDate: Date) => `
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="x-apple-disable-message-reformatting" content="" />
 <meta content="width=device-width" name="viewport" />
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Sora:wght@700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
 <style type="text/css">
   table { border-collapse: separate; table-layout: fixed; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
   table td { border-collapse: collapse; }
-  body { min-width: 100%; margin: 0; padding: 0; background-color: #EEEAF8; }
+  body { min-width: 100%; margin: 0; padding: 0; background-color: #F5F4F0; }
   img { margin: 0; padding: 0; }
   a { text-decoration: none; }
+  @media only screen and (max-width: 520px) {
+    .pad { padding: 0 20px !important; }
+    .inner { padding: 32px 24px !important; }
+  }
 </style>
 </head>
-<body style="min-width:100%;margin:0;padding:0;background-color:#EEEAF8;font-family:'DM Sans',Arial,sans-serif;">
+<body style="min-width:100%;margin:0;padding:0;background-color:#F5F4F0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
 
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-  <tr><td style="background-color:#EEEAF8;" align="center" valign="top">
+  <tr><td style="background-color:#F5F4F0;" align="center" valign="top">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-      <tr><td style="line-height:48px;font-size:1px;display:block;">&nbsp;</td></tr>
+      <tr><td style="line-height:40px;font-size:1px;display:block;">&nbsp;</td></tr>
       <tr><td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;width:100%;max-width:480px;">
-          <tr><td style="padding:0 20px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;width:100%;max-width:520px;">
+          <tr><td class="pad" style="padding:0 20px;">
 
-            <!-- Header -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <!-- Wordmark -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding-bottom:24px;">
               <tr>
-                <td style="background:linear-gradient(135deg,#DC2626 0%,#991B1B 100%);padding:32px 36px 30px;border-radius:16px 16px 0 0;">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td>
-                        <span style="font-family:'Sora',Arial,sans-serif;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">Remedy</span>
-                      </td>
-                      <td align="right">
-                        <span style="font-family:'DM Sans',Arial,sans-serif;font-size:11px;font-weight:500;color:rgba(255,255,255,0.55);letter-spacing:0.8px;text-transform:uppercase;">Account Deleted</span>
-                      </td>
-                    </tr>
-                  </table>
+                <td align="center">
+                  <span style="font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:700;color:#242019;letter-spacing:-0.4px;">Church<span style="color:#C29A3B;">Eden</span></span>
                 </td>
               </tr>
             </table>
 
-            <!-- Card body -->
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <!-- Card -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;">
               <tr>
-                <td style="background:#ffffff;padding:40px 36px;border-radius:0 0 16px 16px;border-top:1px solid #f3e8ff;">
+                <td style="background:#ffffff;border:1px solid #ECE9E2;border-radius:18px;box-shadow:0 12px 34px -18px rgba(36,32,25,0.28);overflow:hidden;">
 
-                  <!-- Greeting -->
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
-                    <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:16px;font-weight:600;line-height:24px;color:#1f2937;">
-                        Hi ${name},
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:16px;font-size:1px;display:block;">&nbsp;</td></tr>
-                  </table>
-
-                  <!-- Main content -->
+                  <!-- Header band -->
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                     <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:24px;color:#4b5563;">
-                        We're writing to confirm that <strong>your Remedy account has been successfully deleted</strong>.
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:16px;font-size:1px;display:block;">&nbsp;</td></tr>
-                    <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:24px;color:#4b5563;">
-                        All your personal data, progress, and account information have been permanently removed from our servers in accordance with our Privacy Policy. This action cannot be undone.
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
-                  </table>
-
-                  <!-- Deletion details -->
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td style="background:#f9fafb;padding:20px;border-radius:8px;border-left:4px solid #DC2626;">
+                      <td style="background:linear-gradient(135deg,#2A241D 0%,#1D1813 100%);padding:26px 28px;border-bottom:1px solid #F0EDE6;">
                         <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                           <tr>
-                            <td style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">
-                              Deletion Date
+                            <td>
+                              <span style="display:inline-block;vertical-align:middle;width:9px;height:9px;border-radius:2px;background:#C29A3B;margin-right:10px;"></span>
+                              <span style="font-family:'Fraunces',Georgia,serif;font-size:17px;font-weight:600;color:#F4EFE3;letter-spacing:-0.2px;">ChurchEden</span>
                             </td>
-                          </tr>
-                          <tr><td style="line-height:8px;font-size:1px;display:block;">&nbsp;</td></tr>
-                          <tr>
-                            <td style="font-family:'DM Sans',Arial,sans-serif;font-size:15px;font-weight:700;color:#1f2937;">
-                              ${deletionDate}
+                            <td align="right">
+                              <span style="font-family:'Inter',Arial,sans-serif;font-size:11px;font-weight:600;color:#C8A95C;letter-spacing:0.12em;text-transform:uppercase;">Account Deleted</span>
                             </td>
                           </tr>
                         </table>
                       </td>
                     </tr>
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
                   </table>
 
-                  <!-- Additional info -->
+                  <!-- Body -->
                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
                     <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:24px;color:#4b5563;">
-                        <strong>What happens next:</strong>
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:8px;font-size:1px;display:block;">&nbsp;</td></tr>
-                    <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:24px;color:#4b5563;">
-                        • Your login credentials will no longer work<br/>
-                        • All your quiz attempts and course progress will be permanently erased<br/>
-                        • You will no longer receive communications from Remedy
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
-                    <tr>
-                      <td style="font-family:'DM Sans',Arial,sans-serif;font-size:14px;line-height:24px;color:#4b5563;">
-                        If you didn't request this action or have any questions, please contact our support team immediately.
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
-                  </table>
+                      <td class="inner" style="padding:36px 32px 32px;">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
 
-                  <!-- Divider -->
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td style="border-top:1px solid #e5e7eb;">&nbsp;</td>
-                    </tr>
-                    <tr><td style="line-height:24px;font-size:1px;display:block;">&nbsp;</td></tr>
-                  </table>
+                          <tr><td style="padding-bottom:12px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:16px;font-weight:600;color:#2A241D;">Hi ${name},</p>
+                          </td></tr>
 
-                  <!-- Footer -->
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <td align="center">
-                        <span style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;line-height:20px;color:#6b7280;">
-                          © 2026 Remedy. All rights reserved.
-                        </span>
+                          <tr><td style="padding-bottom:18px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:15px;line-height:1.75;color:#5A564E;">
+                              We're writing to confirm that <strong>your ChurchEden account has been successfully deleted</strong>.
+                            </p>
+                          </td></tr>
+
+                          <tr><td style="padding-bottom:18px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:15px;line-height:1.75;color:#5A564E;">
+                              All your data, ministry records, and account information have been permanently removed from our servers in accordance with our Privacy Policy. This action cannot be undone.
+                            </p>
+                          </td></tr>
+
+                          <!-- Deletion details -->
+                          <tr><td style="padding-bottom:24px;">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td style="background:#FDF3F3;border:1px solid #F3D8D8;border-left-width:4px;border-left-color:#B5382A;border-radius:10px;padding:16px 18px;">
+                                  <p style="margin:0 0 4px;font-family:'Inter',Arial,sans-serif;font-size:11px;font-weight:600;color:#9A554A;letter-spacing:0.12em;text-transform:uppercase;">Deletion Date</p>
+                                  <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:15px;font-weight:700;color:#7C1F16;">${deletionDate}</p>
+                                </td>
+                              </tr>
+                            </table>
+                          </td></tr>
+
+                          <tr><td style="padding-bottom:10px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:14px;font-weight:600;color:#2A241D;">What happens next</p>
+                          </td></tr>
+
+                          <tr><td style="padding-bottom:18px;">
+                            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td style="background:#FBF8F1;border:1px solid #F0EBDD;border-radius:10px;padding:14px 18px;">
+                                  <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:14px;line-height:1.9;color:#5A564E;">
+                                    • Your login credentials will no longer work<br/>
+                                    • All members, giving, and ministry records will be permanently erased<br/>
+                                    • You will no longer receive communications from ChurchEden
+                                  </p>
+                                </td>
+                              </tr>
+                            </table>
+                          </td></tr>
+
+                          <tr><td style="padding-bottom:24px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:15px;line-height:1.75;color:#5A564E;">
+                              If you didn't request this action or have any questions, please contact our support team immediately.
+                            </p>
+                          </td></tr>
+
+                          <tr><td style="border-top:1px solid #F0EDE6;padding-top:20px;">
+                            <p style="margin:0;font-family:'Inter',Arial,sans-serif;font-size:11px;color:#B4AEA4;text-align:center;">© 2026 ChurchEden · Stewarding your church, beautifully.</p>
+                          </td></tr>
+
+                        </table>
                       </td>
                     </tr>
-                    <tr><td style="line-height:4px;font-size:1px;display:block;">&nbsp;</td></tr>
-                    <tr>
-                      <td align="center">
-                        <span style="font-family:'DM Sans',Arial,sans-serif;font-size:12px;line-height:20px;color:#9ca3af;">
-                          <a href="#" style="color:#7C3AED;text-decoration:none;">Privacy Policy</a> | <a href="#" style="color:#7C3AED;text-decoration:none;">Terms of Service</a>
-                        </span>
-                      </td>
-                    </tr>
-                    <tr><td style="line-height:48px;font-size:1px;display:block;">&nbsp;</td></tr>
                   </table>
 
                 </td>
               </tr>
             </table>
+            <tr><td style="line-height:32px;font-size:1px;display:block;">&nbsp;</td></tr>
 
           </td></tr>
         </table>
@@ -161,7 +142,6 @@ export const deleteAccountTemplate = (name: string, deletionDate: Date) => `
     </table>
   </td></tr>
 </table>
-
 </body>
 </html>
 `;
