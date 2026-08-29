@@ -9,24 +9,33 @@ const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
 
-const gracefulShutdown = async() => {
-    console.log('Recieved kill signal, shutting down gracefully...');
-    server.close(() => {
-        console.log('Closed out remaining connnections');
+let isShuttingDown = false;
+
+const gracefulShutdown = async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    console.log('Received kill signal, shutting down gracefully...');
+
+    await new Promise<void>((resolve) => {
+        server.close(() => {
+            console.log('Closed out remaining connections');
+            resolve();
+        });
     });
 
     try {
         await prisma.$disconnect();
         console.log('Prisma disconnected');
 
-        if(redisClient.isOpen) {
+        if (redisClient.isOpen) {
             await redisClient.quit();
-            console.log('Redis disconnect!');
+            console.log('Redis disconnected!');
         }
 
         process.exit(0);
-    } catch(error) {
-        console.log('Error during graceful shutdown ', error);
+    } catch (error) {
+        console.error('Error during graceful shutdown', error);
         process.exit(1);
     }
 };
