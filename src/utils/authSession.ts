@@ -9,7 +9,7 @@ const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const cookieOptions = (maxAge: number) => ({
     httpOnly: true,
-    secure: env.APP_STAGE === 'production',
+        secure: env.NODE_ENV === 'production',
     sameSite: 'strict' as const,
     maxAge,
 });
@@ -26,7 +26,7 @@ export const setAuthCookies = (
 export const clearAuthCookies = (res: Response) => {
     const baseOptions = {
         httpOnly: true,
-        secure: env.APP_STAGE === 'production',
+    secure: env.NODE_ENV === 'production',
         sameSite: 'strict' as const,
     };
 

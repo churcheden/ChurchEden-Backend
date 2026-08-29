@@ -15,7 +15,7 @@ const connectionString = `${env.DATABASE_URL}`;
 const adapter = new PrismaNeon({ connectionString });
 const prisma = global.prisma || new PrismaClient({adapter});
 
-if(env.APP_STAGE === 'dev') {
+if(env.NODE_ENV === 'development') {
     global.prisma = prisma
 };
 

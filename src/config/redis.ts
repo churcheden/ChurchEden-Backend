@@ -22,21 +22,21 @@ const config: Record<string, any> = { url: redisUrl};
 if(isTls) {
     config.socket = { 
         tls: true as const, 
-        rejectUnauthorized: env.APP_STAGE === 'production'
+        rejectUnauthorized: env.NODE_ENV === 'production'
     }
 };
 
 const redisClient = createClient(config);
 
 redisClient.on('error', (error) => {
-    if(env.APP_STAGE != 'test') {
+    if(env.NODE_ENV != 'testing') {
         console.log("Redis client error: ", error)
     }
 });
 
 (async() => {
     try{
-        if(env.APP_STAGE != 'test'){
+        if(env.NODE_ENV != 'testing'){
             await redisClient.connect();
             console.log("Redis connection successful!")
         }

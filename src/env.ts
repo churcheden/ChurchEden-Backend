@@ -2,13 +2,13 @@ import { env as loadEnv } from 'custom-env';
 import { z, ZodError } from 'zod';
 
 // SETTING STAGE
-process.env.APP_STAGE = process.env.APP_STAGE || 'dev';
+process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 
 // STAGE FLAGING
-const isDevelopment = process.env.APP_STAGE === 'dev';
-const isTesting = process.env.APP_STAGE === 'test';
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isTesting = process.env.NODE_ENV === 'testing';
 
-// LOADING THE APPROPRAITE ENV FILE
+// LOADING THE APPROPRIATE ENV FILE
 if(isDevelopment){
     loadEnv();
 }else if (isTesting){
@@ -20,10 +20,6 @@ const envSchema = z.object({
     NODE_ENV: z.
     enum(['production', 'development', 'testing'])
     .default('development'),
-
-    APP_STAGE: z.
-    enum(['production', 'dev', 'test'])
-    .default('dev'),
 
     NPM_PACKAGE_VERSION: z.string().default(process.env.npm_package_version ?? 'Unknown'),
 
