@@ -6,7 +6,6 @@ import compression from 'compression';
 import passport from 'passport';
 import authRoutes from './routes/authRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
-import uploadRoutes from './routes/uploadRoutes.js';
 import { apiLimitter } from './middleware/rateLimiter.middleware.js';
 import './config/passport.js';
 import { env } from './env.js';
@@ -65,7 +64,6 @@ app.get('/health', (_req, res) => {
 app.use('/api/v1/auth', authRoutes);
 app.use('/auth', authRoutes);
 app.use('/api/v1/payments', paymentRoutes);
-app.use('/api/v1/upload', uploadRoutes);
 
 app.all(/.*/, (req, _res, next) => {
     next(new AppError(`Cannot find ${req.originalUrl} on the server!`, 404, 'PageNotFound'));

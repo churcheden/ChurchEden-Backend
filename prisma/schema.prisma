@@ -40,7 +40,6 @@ model User {
   updatedAt DateTime @updatedAt
 
   transactions Transaction[]
-  sources Source[]
 
   @@index([isPremium])
   @@map("Users")

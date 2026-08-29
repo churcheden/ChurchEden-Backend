@@ -3,7 +3,7 @@ import { app } from './app.js';
 import { prisma } from './config/prisma.js';
 import { redisClient } from './config/redis.js';
 
-const PORT = env.PORT || 3000;
+const PORT = env.PORT || 8080;
 
 const server = app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
