@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "ChurchEden Backend API",
-    "description": "Variables: baseUrl (default https://api.churcheden.app/api/v1), accessToken, refreshToken, churchId, membershipId, reference. On login/refresh the accessToken and refreshToken variables are captured automatically.",
+    "description": "Complete API for the ChurchEden backend.\n\nVariables:\n- baseUrl: default https://api.churcheden.app/api/v1\n- accessToken / refreshToken: captured automatically on Login and Refresh (and on Verify email for new signups)\n- churchId / membershipId / reference: captured automatically where returned; set manually otherwise\n- resetToken: set manually from the password-reset email body (the backend emails the raw token)\n\nNotes:\n- Auth is also aliased at /auth/* (same handlers as /api/v1/auth/*).\n- Payments are mounted at both /api/v1 and /api/v1/payments, so e.g. /initialize works as /api/v1/initialize and /api/v1/payments/initialize.\n- Protected endpoints expect Authorization: Bearer <accessToken>. Web (browser) clients use httpOnly cookies set on login/refresh instead of the Authorization header.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,8 @@
     { "key": "refreshToken", "value": "" },
     { "key": "churchId", "value": "" },
     { "key": "membershipId", "value": "" },
-    { "key": "reference", "value": "" }
+    { "key": "reference", "value": "" },
+    { "key": "resetToken", "value": "" }
   ],
   "item": [
     {
@@ -30,6 +31,21 @@
         },
         {
           "name": "Verify email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken || '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -41,6 +57,18 @@
           }
         },
         {
+          "name": "Resend verification code",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/resend-verification", "host": ["{{baseUrl}}"], "path": ["auth", "resend-verification"] }
+          }
+        },
+        {
           "name": "Login",
           "event": [
             {
@@ -48,9 +76,9 @@
               "script": {
                 "exec": [
                   "const body = pm.response.json();",
-                  "if (body.data) {",
-                  "  pm.collectionVariables.set('accessToken', body.data.accessToken || '');",
-                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken || '');",
+                  "if (body.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken || '');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -68,6 +96,14 @@
           }
         },
         {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
           "name": "Refresh token (mobile: body)",
           "event": [
             {
@@ -76,8 +112,8 @@
                 "exec": [
                   "const body = pm.response.json();",
                   "if (body.data) {",
-                  "  pm.collectionVariables.set('accessToken', body.data.accessToken || '');",
-                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken || '');",
+                  "  pm.collectionVariables.set('accessToken', body.data.newAccessToken || '');",
+                  "  pm.collectionVariables.set('refreshToken', body.data.newRefreshToken || '');",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -95,15 +131,7 @@
           }
         },
         {
-          "name": "Me",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
-            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
-          }
-        },
-        {
-          "name": "Logout (mobile: body refreshToken)",
+          "name": "Logout",
           "request": {
             "method": "POST",
             "header": [
@@ -122,6 +150,20 @@
           "request": {
             "method": "GET",
             "url": { "raw": "{{baseUrl}}/auth/google/url", "host": ["{{baseUrl}}"], "path": ["auth", "google", "url"] }
+          }
+        },
+        {
+          "name": "Google OAuth (redirect to provider)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/google", "host": ["{{baseUrl}}"], "path": ["auth", "google"] }
+          }
+        },
+        {
+          "name": "Google OAuth callback",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/google/callback", "host": ["{{baseUrl}}"], "path": ["auth", "google", "callback"] }
           }
         },
         {
@@ -172,7 +214,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"country\": \"NG\",\n  \"city\": \"Lagos\",\n  \"address\": \"12 Broad Street\",\n  \"phone\": \"+2348012345678\",\n  \"email\": \"church@example.com\",\n  \"primaryLanguage\": \"ENGLISH\",\n  \"timeZone\": \"Europe/London\"\n}"
+              "raw": "{\n  \"country\": \"NG\",\n  \"city\": \"Lagos\",\n  \"address\": \"12 Broad Street\",\n  \"phone\": \"+2348012345678\",\n  \"email\": \"church@example.com\",\n  \"primaryLanguage\": \"ENGLISH\",\n  \"timeZone\": \"Africa/Lagos\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/onboarding/church/step-2", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-2"] }
           }
@@ -342,18 +384,6 @@
       "item": [
         {
           "name": "Initialize",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.data && body.data.reference) pm.collectionVariables.set('reference', body.data.reference);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
@@ -365,6 +395,7 @@
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Set the {{reference}} variable to the transaction reference (e.g. from the Paystack redirect URL / the stored Transaction record).",
             "url": { "raw": "{{baseUrl}}/payments/initialize/verify/{{reference}}", "host": ["{{baseUrl}}"], "path": ["payments", "initialize", "verify", "{{reference}}"] }
           }
         },
@@ -374,6 +405,18 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{baseUrl}}/payments/subscription/cancel", "host": ["{{baseUrl}}"], "path": ["payments", "subscription", "cancel"] }
+          }
+        },
+        {
+          "name": "Paystack webhook",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"charge.success\",\n  \"data\": {}\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/webhooks/paystack", "host": ["{{baseUrl}}"], "path": ["webhooks", "paystack"] }
           }
         }
       ]
