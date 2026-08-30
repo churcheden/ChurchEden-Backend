@@ -52,6 +52,19 @@ export class CacheService {
     }
 
     /**
+     * @param key - Cache key
+     * returns remaining TTL in seconds (-2 if key doesn't exist, -1 if no expiry)
+     */
+    static async ttl(key: string): Promise<number> {
+        try {
+            return await redisClient.ttl(key);
+        } catch (error) {
+            console.error(`Cache ttl error for key ${key}:`, error);
+            return -2;
+        }
+    }
+
+    /**
      * Get all values whose keys match a pattern
      * @param pattern - Key pattern(eg, 'collage:rank:cache:*')
      * returns a map of key -> parsed value (keys with missing/expired values are skipped)
@@ -94,27 +107,7 @@ export class CacheService {
 };
 
 export const cacheKeys = {
+    pendingRegistration: (email: string) => `pending-registration:${email}`,
     user: (userId: string) => `user:${userId}`,
     userMe: (userId: string) => `user:${userId}:me`,
-    userProfile: (userId: string) => `user:${userId}:profile`,
-    userStats: (userId: string) => `user:${userId}:stats`,
-    userStreak: (userId: string) => `user:${userId}:streak`,
-    enrollment: (userId: string, courseId: string) => `user:${userId}:${courseId}:enrollment`,
-    weakPoint: (userId: string, courseId: string) => `user:${userId}:course:${courseId}:weakpoints`,
-    recentQuiz: (userId: string) => `user:${userId}:recent:quizzes`,
-
-    collegeRanking: (college: string) => `college:${college}:rankings`,
-    facultyRanking: (college: string, facultyId: string) => `faculty:${college}:${facultyId}:rankings`,
-    programRanking: (college: string, facultyId: string, programId: string) => `program:${college}:${facultyId}:${programId}:rankings`,
-    courseRanking: (courseId: string, college: string) => `course:${courseId}:${college}:rankings`,
-    quizSession: (sessionId: string) => `quiz:session:${sessionId}:questions`,
-    sessionId: (sessionId: string) => `session:${sessionId}:sessionId`,
-    question: (courseId: string) => `course:${courseId}:question`,
-    courseProgress: (userId: string, courseId?: string) => courseId ? `progress:${userId}:${courseId}` : `progress:${userId}:profile`,
-    studyActivity: (userId: string) => `study:${userId}:profile`,
-    collageRankCache: (userId: string) => `collage:rank:cache:${userId}`,
-    facultyRankCache: (userId: string) => `faculty:rank:cache:${userId}`,
-    programRankCache: (userId: string) => `program:rank:cache:${userId}`,
-    courseRankCache: (userId: string, courseId: string) => `course:rank:cache:${userId}:${courseId}`,
-    uploadsCache: (userId: string, chatId: string) => `ai:chat:${userId}:${chatId}`,
 };

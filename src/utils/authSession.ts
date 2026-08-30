@@ -9,7 +9,7 @@ const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const cookieOptions = (maxAge: number) => ({
     httpOnly: true,
-        secure: env.NODE_ENV === 'production',
+    secure: env.NODE_ENV === 'production',
     sameSite: 'strict' as const,
     maxAge,
 });
@@ -26,7 +26,7 @@ export const setAuthCookies = (
 export const clearAuthCookies = (res: Response) => {
     const baseOptions = {
         httpOnly: true,
-    secure: env.NODE_ENV === 'production',
+        secure: env.NODE_ENV === 'production',
         sameSite: 'strict' as const,
     };
 
@@ -34,7 +34,10 @@ export const clearAuthCookies = (res: Response) => {
     res.clearCookie('refreshToken', baseOptions);
 };
 
-export const issueAuthTokens = async (user: { id: string; email: string }) => {
+export const issueAuthTokens = async (
+    user: { id: string; email: string },
+    deviceInfo?: string,
+) => {
     const [accessToken, refreshToken] = await Promise.all([
         generateAccessToken({ id: user.id, email: user.email }),
         generateRefreshToken({ id: user.id, email: user.email }),
@@ -42,24 +45,44 @@ export const issueAuthTokens = async (user: { id: string; email: string }) => {
 
     const hashedRefreshToken = await hashPassword(refreshToken);
 
+    await prisma.refreshToken.create({
+        data: {
+            userId: user.id,
+            tokenHash: hashedRefreshToken,
+            deviceInfo: deviceInfo ?? null,
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+        },
+    });
+
     await prisma.user.update({
         where: { id: user.id },
-        data: {
-            refreshToken: hashedRefreshToken,
-            refreshTokenExpires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
-            lastLogin: new Date(),
-        },
+        data: { lastLogin: new Date() },
     });
 
     return { accessToken, refreshToken };
 };
 
-export const revokeUserSession = async (userId: string) => {
-    await prisma.user.update({
-        where: { id: userId },
-        data: {
-            refreshToken: null,
-            refreshTokenExpires: null,
+export const findActiveRefreshToken = async (userId: string, hashedToken: string) => {
+    return prisma.refreshToken.findFirst({
+        where: {
+            userId,
+            tokenHash: hashedToken,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
         },
+    });
+};
+
+export const revokeRefreshToken = async (id: string) => {
+    await prisma.refreshToken.updateMany({
+        where: { id, revokedAt: null },
+        data: { revokedAt: new Date() },
+    });
+};
+
+export const revokeUserSession = async (userId: string) => {
+    await prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
     });
 };

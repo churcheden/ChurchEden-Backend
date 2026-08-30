@@ -171,7 +171,7 @@ class PaymentService {
             where: { id: userId },
         });
 
-        if (!user?.paystackSubCode || !user.paystackEmailToken) {
+        if (!user?.subscriptionRef || user.subscriptionProcessor !== 'paystack') {
             throw new AppError('No active subscription found', 404, 'NO_SUBSCRIPTION')
         };
 
@@ -183,8 +183,8 @@ class PaymentService {
             },
             body: JSON.stringify(
                 {
-                    code: user.paystackSubCode,
-                    token: user.paystackEmailToken,
+                    code: user.subscriptionRef,
+                    token: '',
                 }
             ),
         });
@@ -204,7 +204,7 @@ class PaymentService {
             data: {
                 isPremium: false,
                 premiumExpiry: new Date(),
-                subscriptionStatus: 'cancelled',
+                subscriptionStatus: 'CANCELED',
             },
         });
 

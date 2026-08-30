@@ -47,3 +47,19 @@ export const passwordLimitter = createLimiter({
     max: 3,
     message: 'Too many password reset attempts, please try again after an hour',
 });
+
+export const resendVerificationLimitter = rateLimit({
+    store: buildRedisStore('rl:resend-verify:'),
+    windowMs: 10 * 60 * 1000,
+    max: 3,
+    message: {
+        status: 'error',
+        message: 'Too many verification OTP resends, please try again later',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+        const email = (req.body as { email?: string } | undefined)?.email?.trim().toLowerCase();
+        return email ? `email:${email}` : (req.ip ?? 'unknown');
+    },
+});

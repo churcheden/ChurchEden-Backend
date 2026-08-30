@@ -199,9 +199,9 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                     await prisma.user.update({
                         where: { id: user.id },
                         data: {
-                            paystackSubCode: subCode,
-                            paystackEmailToken: emailToken,
-                            subscriptionStatus: 'active',
+                            subscriptionProcessor: 'paystack',
+                            subscriptionRef: subCode,
+                            subscriptionStatus: 'ACTIVE',
                         },
                     });
                 }
@@ -230,7 +230,7 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                     data: {
                         isPremium: false,
                         premiumExpiry: expiryDate,
-                        subscriptionStatus: 'cancelled',
+                        subscriptionStatus: 'CANCELED',
                     },
                 });
 
@@ -253,7 +253,7 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
 
                 await prisma.user.update({
                     where: { id: user.id },
-                    data: { subscriptionStatus: 'non_renewing' },
+                    data: { subscriptionStatus: 'PAST_DUE' },
                 });
 
                 const content = subscriptionNotRenewEmail(user.fullName, expiryDate, env.FRONTEND_URL);

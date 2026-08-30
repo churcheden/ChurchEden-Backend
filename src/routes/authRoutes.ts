@@ -8,7 +8,7 @@ import {
     logoutUser,
     refreshToken,
     registerUser,
-    resendVericationEmail,
+    resendVerificationEmail,
     resetPassword,
     verifyEmail,
     getCurrentUser,
@@ -20,9 +20,10 @@ import {
     forgotPasswordSchema,
     resetPasswordSchema,
     verifyEmailSchema,
+    resendVerificationSchema,
 } from '../schema/auth.schema.js';
 import { authenticateToken } from "../middleware/auth.middleware.js";
-import { authLimitter, passwordLimitter } from "../middleware/rateLimiter.middleware.js";
+import { authLimitter, passwordLimitter, resendVerificationLimitter } from "../middleware/rateLimiter.middleware.js";
 import { passport } from '../config/passport.js';
 import { env } from '../env.js';
 
@@ -37,7 +38,7 @@ router.post('/refresh', validateBody(refreshTokenSchema), refreshToken);
 router.post('/forgot-password', passwordLimitter, validateBody(forgotPasswordSchema), forgotPassword);
 router.post('/reset-password', passwordLimitter, validateBody(resetPasswordSchema), resetPassword);
 router.post('/verify-email', authLimitter, validateBody(verifyEmailSchema), verifyEmail);
-router.post('/resend-verification', authLimitter, authenticateToken as RequestHandler, resendVericationEmail as RequestHandler);
+router.post('/resend-verification', resendVerificationLimitter, validateBody(resendVerificationSchema), resendVerificationEmail);
 
 // Google OAuth
 router.get('/google/url', getGoogleAuthUrl);

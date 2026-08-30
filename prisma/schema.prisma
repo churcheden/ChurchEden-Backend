@@ -11,38 +11,93 @@ enum LoginProvider {
   GOOGLE
 }
 
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+enum ChurchRole {
+  MEMBER
+  ADMIN
+  SUPER_ADMIN
+}
+
 model User {
-  id String @id @default(uuid())
-  email String @unique
-  password String
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String? // optional: Google-login users never set one
 
   fullName String?
 
-  googleId String? @unique
+  googleId      String?       @unique
   loginProvider LoginProvider @default(EMAIL)
-  isVerified Boolean @default(false)
-  verifyToken String?
-  verifyTokenExpires DateTime?
-  resetToken String?
+  isVerified    Boolean       @default(false)
+
+  // store hashed values, never the raw token
+  resetTokenHash    String?
   resetTokenExpires DateTime?
-  refreshToken String?
-  refreshTokenExpires DateTime?
+
   lastLogin DateTime?
 
-  isPremium Boolean @default(false)
-  premiumSince DateTime?
+  isPremium     Boolean   @default(false)
+  premiumSince  DateTime?
   premiumExpiry DateTime?
-  paystackSubCode String?
-  paystackEmailToken String?
-  subscriptionStatus String?
+
+  // processor-agnostic — was Paystack-specific
+  subscriptionProcessor String?            // e.g. "stripe" | "paypal" | "moolre"
+  subscriptionRef        String?           // that processor's subscription/customer id
+  subscriptionStatus     SubscriptionStatus?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  transactions Transaction[]
+  transactions      Transaction[]
+  refreshTokens     RefreshToken[]
+  churchMemberships ChurchMembership[]
 
   @@index([isPremium])
   @@map("Users")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  deviceInfo String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@map("RefreshTokens")
+}
+
+model ChurchMembership {
+  id       String     @id @default(uuid())
+  userId   String
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  churchId String
+  church   Church     @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  role     ChurchRole @default(MEMBER)
+
+  status   String    @default("PENDING") // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
+  joinedAt DateTime  @default(now())
+
+  @@unique([userId, churchId]) // a user can't join the same church twice
+  @@index([churchId])
+  @@map("ChurchMemberships")
+}
+
+model Church {
+  id   String @id @default(uuid())
+  name String
+
+  memberships ChurchMembership[]
+
+  @@map("Churches")
 }
 
 model Transaction {

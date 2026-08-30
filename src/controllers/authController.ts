@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from '../config/prisma.js'
 import { comparePasswords, hashPassword } from '../utils/password.js'
-import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from "../utils/jwt.js";
+import { verifyRefreshToken } from "../utils/jwt.js";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
 import crypto from 'crypto';
 import { env } from "../env.js";
@@ -14,14 +14,16 @@ import { CacheService, cacheKeys } from "../utils/cache.js";
 import {
     clearAuthCookies,
     issueAuthTokens,
+    revokeRefreshToken,
     revokeUserSession,
     setAuthCookies,
 } from "../utils/authSession.js";
 
-const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-
-const getRefreshTokenFromRequest = (req: Request) =>
-    req.body.refreshToken ?? req.cookies?.refreshToken;
+const getRefreshTokenFromRequest = (req: Request) => {
+    const platform = req.headers['x-client-platform'];
+    if (platform === 'web') return req.cookies?.refreshToken || null;
+    return req.body.refreshToken || req.cookies?.refreshToken || null;
+};
 
 // Register User
 export const registerUser = catchAsync(async(req: Request, res: Response) => {
@@ -38,51 +40,19 @@ export const registerUser = catchAsync(async(req: Request, res: Response) => {
 
         const hashedPassword = await hashPassword(password);
         const otp = generateOTP();
-        const hashedVerifyToken = await hashPassword(otp);
+        const otpHash = await hashPassword(otp);
 
-        // Use interactive transaction so user creation + refresh-token write are atomic.
-        const { newUser, accessToken, refreshToken } = await prisma.$transaction(async (tx) => {
-            const user = await tx.user.create({
-                data: {
-                    email,
-                    password: hashedPassword,
-                    verifyToken: hashedVerifyToken,
-                    verifyTokenExpires: new Date(Date.now() + 15 * 60 * 1000),
-                }
-            });
+        // Pending registration lives in Redis only — no User row is created until OTP verification.
+        await CacheService.set(
+            cacheKeys.pendingRegistration(email),
+            { hashedPassword, otpHash, attempts: 0, createdAt: Date.now() },
+            600, // 10 min TTL — Redis expires it automatically, no cleanup job
+        );
 
-            const [at, rt] = await Promise.all([
-                generateAccessToken({ id: user.id, email: user.email }),
-                generateRefreshToken({ id: user.id, email: user.email }),
-            ]);
-
-            const hashedRt = await hashPassword(rt);
-
-            await tx.user.update({
-                where: { id: user.id },
-                data: {
-                    refreshToken: hashedRt,
-                    refreshTokenExpires: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
-                    lastLogin: new Date(),
-                }
-            });
-
-            return { newUser: user, accessToken: at, refreshToken: rt };
-        });
-
-        setAuthCookies(res, accessToken, refreshToken);
-
-        const firstName = newUser.email.split('@')[0] ?? 'there';
-        const { otpSent } = await emailService.sendRegistrationEmails({
-            email: newUser.email,
-            otp,
-            firstName,
-            signInUrl: `${env.FRONTEND_URL}/onboarding/sign-in`,
-        });
+        const firstName = email.split('@')[0] ?? 'there';
+        const otpSent = await emailService.sendVerificationOTPEmail(email, otp, firstName);
 
         if (!otpSent) {
-            await prisma.user.delete({ where: { id: newUser.id } });
-            clearAuthCookies(res);
             wideLogger.addCtx('register_result', 'verification_email_failed');
             throw new AppError(
                 'Could not send verification email. Please try again.',
@@ -90,25 +60,105 @@ export const registerUser = catchAsync(async(req: Request, res: Response) => {
                 'EMAIL_SEND_FAILED',
             );
         }
-        
-        wideLogger.addCtx('user_id', newUser.id);
+
         wideLogger.addCtx('action', 'user_registered');
-        wideLogger.addCtx('verification_email_sent_to', newUser.email);
+        wideLogger.addCtx('verification_email_sent_to', email);
         return res.status(201).json({
             status: 'success',
-            message: 'Account created! Check your email for the verification code.',
+            message: 'Check your email for the verification code.',
             requiresVerification: true,
-            accessToken,
-            refreshToken,
-            user: {
-                id: newUser.id,
-                email: newUser.email,
-                isVerified: newUser.isVerified,
-                createdAt: newUser.createdAt,
-                updatedAt: newUser.updatedAt,
-            },
         });
 });
+
+// Verify Email with OTP
+export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
+    const { otp, email: rawEmail } = req.body;
+    const email = rawEmail?.trim().toLowerCase();
+
+    if(!otp || typeof otp !== 'string') {
+        wideLogger.addCtx('verify_email_result', 'fail');
+        throw new AppError('Verification OTP is required!', 400, 'MISSING_OTP');
+    };
+    if(!email) {
+        wideLogger.addCtx('verify_email_result', 'fail');
+        throw new AppError('Verification email is required!', 400, 'MISSING_EMAIL');
+    };
+
+    const cacheKey = cacheKeys.pendingRegistration(email);
+    const pending = await CacheService.get<{
+        hashedPassword: string;
+        otpHash: string;
+        attempts: number;
+        createdAt?: number;
+    }>(cacheKey);
+
+    if(!pending) {
+        wideLogger.addCtx('verify_email_result', 'fail');
+        throw new AppError(
+            'Verification code expired or invalid, please register again.',
+            400,
+            'PENDING_REGISTRATION_NOT_FOUND',
+        );
+    }
+
+    const isMatch = await comparePasswords(otp, pending.otpHash);
+
+    if(!isMatch) {
+        pending.attempts += 1;
+
+        if(pending.attempts >= 5) {
+            await CacheService.delete(cacheKey);
+            wideLogger.addCtx('verify_email_result', 'too_many_attempts');
+            throw new AppError('Too many incorrect attempts. Please register again.', 400, 'TOO_MANY_ATTEMPTS');
+        }
+
+        const remainingTtl = await CacheService.ttl(cacheKey);
+        await CacheService.set(cacheKey, pending, remainingTtl > 0 ? remainingTtl : 600);
+        wideLogger.addCtx('verify_email_result', 'fail');
+        throw new AppError('Invalid OTP, please enter the right OTP', 400, 'INVALID_OTP');
+    };
+
+    const newUser = await prisma.user.create({
+        data: {
+            email,
+            password: pending.hashedPassword,
+            isVerified: true,
+        }
+    });
+
+    const { accessToken, refreshToken } = await issueAuthTokens({
+        id: newUser.id,
+        email: newUser.email,
+    });
+
+    setAuthCookies(res, accessToken, refreshToken);
+
+    const firstName = newUser.email.split('@')[0] ?? 'there';
+    await emailService.sendWelcomeEmail({
+        firstName,
+        email: newUser.email,
+        signInUrl: `${env.FRONTEND_URL}/onboarding/sign-in`,
+    });
+
+    await CacheService.delete(cacheKey);
+
+    wideLogger.addCtx('user_id', newUser.id);
+    wideLogger.addCtx('verify_email_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        message: 'Email verified successfully!',
+        accessToken,
+        refreshToken,
+        user: {
+            id: newUser.id,
+            email: newUser.email,
+            isVerified: newUser.isVerified,
+            createdAt: newUser.createdAt,
+            updatedAt: newUser.updatedAt,
+        },
+    });
+});
+
 
 // Login User
 export const loginUser = catchAsync(async(req: Request, res: Response) => {
@@ -126,7 +176,8 @@ export const loginUser = catchAsync(async(req: Request, res: Response) => {
             throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
         };
 
-        const isValidatedPassword = await comparePasswords(password, user.password);
+        const isValidatedPassword =
+            user.password != null ? await comparePasswords(password, user.password) : false;
 
         if(!isValidatedPassword) {
             wideLogger.addCtx('user_id', user.id);
@@ -190,7 +241,7 @@ export const forgotPassword = catchAsync(async(req: Request, res: Response) => {
     await prisma.user.update({
         where: { id: user.id },
         data: {
-            resetToken: hashedToken,
+            resetTokenHash: hashedToken,
             resetTokenExpires: new Date(Date.now() + 900000),
         }
     });
@@ -220,7 +271,7 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
 
         const user = await prisma.user.findFirst({
             where: {
-                resetToken: hashedToken,
+                resetTokenHash: hashedToken,
                 resetTokenExpires: { gt: new Date() }
             }
         });
@@ -233,16 +284,20 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
         wideLogger.addCtx('user_id', user.id);
         const hashedNewPassword = await hashPassword(newPassword);
 
-        await prisma.user.update({
-            where: {id: user.id},
-            data: {
-                password: hashedNewPassword,
-                resetToken: null,
-                resetTokenExpires: null,
-                refreshToken: null,
-                refreshTokenExpires: null,
-            }
-        });
+        await prisma.$transaction([
+            prisma.user.update({
+                where: {id: user.id},
+                data: {
+                    password: hashedNewPassword,
+                    resetTokenHash: null,
+                    resetTokenExpires: null,
+                }
+            }),
+            prisma.refreshToken.updateMany({
+                where: { userId: user.id, revokedAt: null },
+                data: { revokedAt: new Date() },
+            }),
+        ]);
 
         const username = user.fullName?.split(' ')[0] || 'User';
         await emailService.sendPasswordChangeEmail(user.email, username);
@@ -266,30 +321,46 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         const payload = await verifyRefreshToken(refreshTokenValue);
 
         const user = await prisma.user.findUnique({
-            where: {
-                id: payload.id,
-                refreshTokenExpires: { gt: new Date() }
-            }
+            where: { id: payload.id },
+            select: { id: true, email: true },
         });
 
-        if(!user || !user.refreshToken) {
+        if(!user) {
             wideLogger.addCtx('refresh_token_result', 'invalid_user_or_expired');
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         };
 
-        wideLogger.addCtx('user_id', user.id);
-        const isMatch = await comparePasswords(refreshTokenValue, user.refreshToken!);
+        const storedTokens = await prisma.refreshToken.findMany({
+            where: {
+                userId: user.id,
+                revokedAt: null,
+                expiresAt: { gt: new Date() },
+            },
+        });
 
-        if(!isMatch) {
+        let matchedRecord: { id: string } | null = null;
+        for (const record of storedTokens) {
+            if (await comparePasswords(refreshTokenValue, record.tokenHash)) {
+                matchedRecord = record;
+                break;
+            }
+        }
+
+        if(!matchedRecord) {
             wideLogger.addCtx('refresh_token_result', 'mismatch');
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         };
+
+        wideLogger.addCtx('user_id', user.id);
 
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
             await issueAuthTokens({
                 id: user.id,
                 email: user.email,
             });
+
+        // Rotate: the used refresh token is single-use
+        await revokeRefreshToken(matchedRecord.id);
 
         setAuthCookies(res, newAccessToken, newRefreshToken);
 
@@ -362,94 +433,43 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         return res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
 });
 
-// Verify Email with OTP
-export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
-        const { otp, email } = req.body;
+export const resendVerificationEmail = catchAsync(async(req: Request, res: Response) => {
+        wideLogger.addCtx('action', 'resend_verification_email');
 
-        if(!otp || typeof otp !== 'string') {
-            wideLogger.addCtx('verify_email_result', 'fail');
-            throw new AppError('Verification OTP is required!', 400, 'MISSING_OTP');
-        };
+        const { email: rawEmail } = req.body;
+        const email = rawEmail?.trim().toLowerCase();
+
         if(!email) {
-            wideLogger.addCtx('verify_email_result', 'fail');
+            wideLogger.addCtx('resend_verification_result', 'missing_email');
             throw new AppError('Verification email is required!', 400, 'MISSING_EMAIL');
         };
 
-        const user = await prisma.user.findUnique({
-            where: {
-                email: email
-            }
-        });
+        const cacheKey = cacheKeys.pendingRegistration(email);
+        const pending = await CacheService.get<{
+            hashedPassword: string;
+            otpHash: string;
+            attempts: number;
+            createdAt?: number;
+        }>(cacheKey);
 
-        if(!user || !user.verifyToken) {
-            wideLogger.addCtx('verify_email_result', 'fail');
-            throw new AppError('User not found!', 404, 'USER_NOT_FOUND');
-        }
-
-        if(!user.verifyTokenExpires || user.verifyTokenExpires < new Date()) {
-            wideLogger.addCtx('verify_email_result', 'fail');
-            throw new AppError('Verification code has expired. Please request a new one.', 400, 'OTP_EXPIRED');
-        }
-
-        const isMatch = await comparePasswords(otp, user.verifyToken);
-
-        if(!isMatch) {
-            wideLogger.addCtx('verify_email_result', 'fail');
-            throw new AppError('Invalid OTP, please enter the right OTP', 400, 'INVALID_OTP');
-        };
-        
-        wideLogger.addCtx('user_id', user.id);
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                isVerified: true,
-                verifyToken: null,
-                verifyTokenExpires: null
-            }
-        });
-
-        await CacheService.delete(cacheKeys.userMe(user.id));
-
-        wideLogger.addCtx('verify_email_result', 'success');
-        return res.status(200).json({
-            status: 'success',
-            message: 'Email verified successfully! You can now log in.'
-        });
-});
-
-export const resendVericationEmail = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
-        wideLogger.addCtx('action', 'resend_verification_email');
-        wideLogger.addCtx('user_id', req.user?.id);
-        
-        const user = await prisma.user.findUnique({
-            where: { id: req.user!.id }
-        });
-
-        if(!user) {
-            wideLogger.addCtx('resend_verification_result', 'user_not_found');
-            throw new AppError('User not found!', 404, 'USER_NOT_FOUND');
-        };
-
-        if(user.isVerified) {
-            wideLogger.addCtx('resend_verification_result', 'already_verified');
-            throw new AppError('User already verified!', 400, 'ALREADY_VERIFIED');
+        if(!pending) {
+            wideLogger.addCtx('resend_verification_result', 'pending_not_found');
+            throw new AppError(
+                'No pending registration found for this email.',
+                400,
+                'PENDING_REGISTRATION_NOT_FOUND',
+            );
         };
 
         const otp = generateOTP();
-        const hashedVerifyToken = await hashPassword(otp);
-
-        await prisma.user.update({
-            where: { id: user.id },
-            data: {
-                verifyToken: hashedVerifyToken,
-                verifyTokenExpires: new Date(Date.now() + 15 * 60 * 1000)
-            }
-        });
+        pending.otpHash = await hashPassword(otp);
+        pending.attempts = 0;
+        await CacheService.set(cacheKey, pending, 600);
 
         const otpSent = await emailService.sendVerificationOTPEmail(
-            user.email,
+            email,
             otp,
-            user.email.split('@')[0],
+            email.split('@')[0],
         );
 
         if (!otpSent) {
@@ -462,7 +482,7 @@ export const resendVericationEmail = catchAsync(async(req: AuthenticatedRequest,
         }
 
         wideLogger.addCtx('resend_verification_result', 'success');
-        wideLogger.addCtx('verification_email_sent_to', user.email);
+        wideLogger.addCtx('verification_email_sent_to', email);
         return res.status(200).json({
             message: 'Verification OTP sent to your email!'
         });
