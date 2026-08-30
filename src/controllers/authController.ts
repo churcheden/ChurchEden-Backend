@@ -25,6 +25,13 @@ const getRefreshTokenFromRequest = (req: Request) => {
     return req.body.refreshToken || req.cookies?.refreshToken || null;
 };
 
+const resetTokenHashesMatch = (hashedToken: string, storedHash: string): boolean => {
+    const a = Buffer.from(hashedToken, 'hex');
+    const b = Buffer.from(storedHash, 'hex');
+    if (a.length !== b.length) return false;
+    return crypto.timingSafeEqual(a, b);
+};
+
 // Register User
 export const registerUser = catchAsync(async(req: Request, res: Response) => {
         const { email: rawEmail, password } = req.body;
@@ -269,12 +276,28 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
 
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-        const user = await prisma.user.findFirst({
+        // Verify the hashed token in constant time instead of an exact DB
+        // equality match. Reset URLs carry only the `token` (no email), so we
+        // compare against the small set of users with an active, non-expired
+        // reset token.
+        const candidates = await prisma.user.findMany({
             where: {
-                resetTokenHash: hashedToken,
+                resetTokenHash: { not: null },
                 resetTokenExpires: { gt: new Date() }
-            }
+            },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                resetTokenHash: true,
+            },
         });
+
+        const user = candidates.find(
+            (candidate) =>
+                candidate.resetTokenHash != null &&
+                resetTokenHashesMatch(hashedToken, candidate.resetTokenHash),
+        ) ?? null;
 
         if(!user) {
             wideLogger.addCtx('reset_password_result', 'invalid_token');
