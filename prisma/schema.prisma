@@ -11,6 +11,20 @@ enum LoginProvider {
   GOOGLE
 }
 
+enum Gender {
+  MALE
+  FEMALE
+  PREFER_NOT_TO_SAY
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+  PREFER_NOT_TO_SAY
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
@@ -53,12 +67,35 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  memberProfile     MemberProfile?
   transactions      Transaction[]
   refreshTokens     RefreshToken[]
   churchMemberships ChurchMembership[]
 
   @@index([isPremium])
   @@map("Users")
+}
+
+model MemberProfile {
+  id              String        @id @default(uuid())
+  userId          String        @unique
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  profilePhotoUrl String? // R2 object URL, optional
+  fullName        String // duplicates User.fullName intentionally — edited independently of the Google-sourced value
+  dateOfBirth     DateTime
+  gender          Gender
+  phoneNumber     String // E.164 format, e.g. +233241234567
+  contactEmail    String // separate from User.email (login email) — the "Contact Email Address" field
+  city            String
+  address         String
+  maritalStatus   MaritalStatus
+  occupation      String?
+
+  completedAt     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("MemberProfiles")
 }
 
 model RefreshToken {

@@ -508,8 +508,13 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 
         setAuthCookies(res, accessToken, refreshToken);
 
+        const hasProfile = await prisma.memberProfile.findUnique({
+            where: { userId: user.id },
+        });
+
         wideLogger.addCtx('google_auth_result', 'success');
-        return res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
+        wideLogger.addCtx('profile_complete', !!hasProfile);
+        return res.redirect(`${frontendUrl}/auth/callback?profileComplete=${!!hasProfile}`);
 });
 
 // Logout
@@ -578,6 +583,7 @@ export const getCurrentUser = catchAsync(async(req: AuthenticatedRequest, res: R
                     loginProvider: true,
                     lastLogin: true,
                     createdAt: true,
+                    memberProfile: { select: { id: true } },
                 }
             });
 
@@ -587,9 +593,12 @@ export const getCurrentUser = catchAsync(async(req: AuthenticatedRequest, res: R
         };
         wideLogger.addCtx('cache_hit', false);
 
+        const { memberProfile, ...userData } = user;
+
         const result = {
             status: 'success',
-            user,
+            user: userData,
+            profileComplete: !!memberProfile,
         };
 
         await CacheService.set(cacheKey, result, 600);
