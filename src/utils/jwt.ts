@@ -1,4 +1,4 @@
-import {createSecretKey} from 'crypto';
+import { createSecretKey, randomUUID } from 'crypto';
 import { jwtVerify, SignJWT } from 'jose';
 import { env } from '../env.js';
 
@@ -13,6 +13,7 @@ export const generateRefreshToken = (payload: JwtPayload) => {
 
     return new SignJWT(payload as Record<string, any>)
     .setProtectedHeader({ alg: 'HS256'})
+    .setJti(randomUUID())
     .setIssuedAt()
     .setExpirationTime(env.REFRESH_TOKEN_EXPIRES_IN || '7d')
     .sign(secretKey)
@@ -24,6 +25,7 @@ export const generateAccessToken = (payload: JwtPayload) => {
 
     return new SignJWT(payload as Record<string, any>)
     .setProtectedHeader({ alg: 'HS256'})
+    .setJti(randomUUID())
     .setIssuedAt()
     .setExpirationTime(env.ACCESS_TOKEN_EXPIRES_IN|| '15m')
     .sign(secretKey)
