@@ -49,7 +49,7 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 |---|---|---|---|
 | PATCH | `/step-1` | 🔒 | Church basics: `firstName, lastName, churchName, denomination, congregationSize, foundedYear?`. |
 | PATCH | `/step-2` | 🔒 | Location & contact: `country, city, address, phone, email, primaryLanguage, timeZone`. |
-| PATCH | `/step-3` | 🔒 | Multipart: `logo` (≤2MB) + `serviceTimes` JSON string (e.g. `[{"label":"Sunday Service","dayOfWeek":0,"time":"10:30"}]`). |
+| PATCH | `/step-3` | 🔒 | Multipart: `logo` (≤5MB) + `serviceTimes` JSON string (e.g. `[{"label":"Sunday Service","dayOfWeek":0,"time":"10:30"}]`). |
 | PATCH | `/step-4` | 🔒 | Ministries: `ministryIds[]` + `customMinistries[]`. |
 | GET | `/draft` | 🔒 | Resume a saved onboarding draft. |
 | POST | `/complete` | 🔒 | Finish onboarding. Returns `data.churchId`. |
@@ -69,6 +69,8 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | GET | `/` | 🔒 | List join requests. Query params: `status` (`PENDING\|APPROVED\|REJECTED`), `churchId` (uuid). |
 | POST | `/approve` | 🔒 | Approve. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN of the church. |
 | POST | `/reject` | 🔒 | Reject. Body `{membershipId, rejectionReason?}`. Requires ADMIN/SUPER_ADMIN of the church. |
+| POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason?}`. Requires ADMIN/SUPER_ADMIN. |
+| POST | `/unban` | 🔒 | Lift a ban so the user can submit join requests again. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN. |
 
 ### Payments — `{base}/payments` (also mounted at `{base}`)
 

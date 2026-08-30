@@ -428,4 +428,187 @@ describe('join-requests', () => {
             expect(res.body.code).toBe('VALIDATION_FAILED');
         });
     });
+
+    describe('POST /api/v1/join-requests/ban', () => {
+        const submitRequest = async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            return submit.body.membership.id;
+        };
+
+        it('200 — bans the user and clears the requester /me cache', async () => {
+            const membershipId = await submitRequest();
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId, banReason: 'Repeated spam requests' });
+            expect(res.status).toBe(200);
+            expect(res.body.membership.isBanned).toBe(true);
+            expect(res.body.membership.banReason).toBe('Repeated spam requests');
+            expect(res.body.membership.status).toBe('REJECTED');
+
+            const row = await prisma.churchMembership.findUnique({ where: { id: membershipId } });
+            expect(row?.isBanned).toBe(true);
+            expect(row?.banReason).toBe('Repeated spam requests');
+            expect(row?.bannedAt).not.toBeNull();
+        });
+
+        it('403 — FORBIDDEN for the applicant themselves (non-admin)', async () => {
+            const membershipId = await submitRequest();
+            const res = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId });
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('FORBIDDEN');
+        });
+
+        it('403 — FORBIDDEN for an admin of a different church', async () => {
+            const otherAdmin = await registerAndVerify();
+            await prisma.churchMembership.create({
+                data: {
+                    userId: otherAdmin.userId,
+                    churchId: churchOther.id,
+                    role: 'SUPER_ADMIN',
+                    status: 'APPROVED',
+                },
+            });
+            const membershipId = await submitRequest();
+            const res = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(otherAdmin.accessToken))
+                .send({ membershipId });
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('FORBIDDEN');
+        });
+
+        it('404 — REQUEST_NOT_FOUND for an unknown membership id', async () => {
+            const res = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId: '99999999-9999-4999-9999-999999999999' });
+            expect(res.status).toBe(404);
+            expect(res.body.code).toBe('REQUEST_NOT_FOUND');
+        });
+
+        it('200 — banning an already-banned user is idempotent', async () => {
+            const membershipId = await submitRequest();
+            await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId })
+                .expect(200);
+
+            const again = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId });
+            expect(again.status).toBe(200);
+            expect(again.body.message).toMatch(/already banned/);
+        });
+
+        it('400 — VALIDATION_FAILED for an overly long ban reason', async () => {
+            const membershipId = await submitRequest();
+            const res = await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId, banReason: 'x'.repeat(501) });
+            expect(res.status).toBe(400);
+            expect(res.body.code).toBe('VALIDATION_FAILED');
+        });
+    });
+
+    describe('POST /api/v1/join-requests/unban', () => {
+        it('200 — unbans a banned user and lets them re-apply', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            const membershipId = submit.body.membership.id;
+            await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId, banReason: 'Spam' })
+                .expect(200);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/unban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId });
+            expect(res.status).toBe(200);
+            expect(res.body.membership.isBanned).toBe(false);
+            expect(res.body.membership.banReason).toBeNull();
+            expect(res.body.membership.bannedAt).toBeNull();
+
+            const resubmit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id });
+            expect(resubmit.status).toBe(200);
+            expect(resubmit.body.membership.status).toBe('PENDING');
+        });
+
+        it('403 — FORBIDDEN for the banned user themselves', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            const membershipId = submit.body.membership.id;
+            await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId })
+                .expect(200);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/unban')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId });
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('FORBIDDEN');
+        });
+
+        it('200 — unbanning a non-banned user is a no-op', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/unban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId: submit.body.membership.id });
+            expect(res.status).toBe(200);
+            expect(res.body.message).toMatch(/not banned/);
+        });
+    });
+
+    describe('POST /api/v1/join-requests — banned user cannot re-apply', () => {
+        it('403 — BANNED_FROM_CHURCH when the user is already banned', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            await request(app)
+                .post('/api/v1/join-requests/ban')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId: submit.body.membership.id })
+                .expect(200);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id });
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('BANNED_FROM_CHURCH');
+        });
+    });
 });

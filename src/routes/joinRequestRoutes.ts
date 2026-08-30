@@ -9,12 +9,16 @@ import {
     getJoinRequests,
     approveJoinRequest,
     rejectJoinRequest,
+    banUser,
+    unbanUser,
 } from '../controllers/joinRequestController.js';
 import {
     approveJoinRequestSchema,
+    banUserSchema,
     joinRequestsQuerySchema,
     joinRequestSchema,
     rejectJoinRequestSchema,
+    unbanUserSchema,
 } from '../schema/join.schema.js';
 
 const router = Router();
@@ -58,6 +62,20 @@ router.post('/reject',
     validateBody(rejectJoinRequestSchema),
     requireChurchRole(['ADMIN', 'SUPER_ADMIN'], resolveChurchFromMembership) as RequestHandler,
     rejectJoinRequest as RequestHandler,
+);
+
+router.post('/ban',
+    authenticateToken as RequestHandler,
+    validateBody(banUserSchema),
+    requireChurchRole(['ADMIN', 'SUPER_ADMIN'], resolveChurchFromMembership) as RequestHandler,
+    banUser as RequestHandler,
+);
+
+router.post('/unban',
+    authenticateToken as RequestHandler,
+    validateBody(unbanUserSchema),
+    requireChurchRole(['ADMIN', 'SUPER_ADMIN'], resolveChurchFromMembership) as RequestHandler,
+    unbanUser as RequestHandler,
 );
 
 export default router;

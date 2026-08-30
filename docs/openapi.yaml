@@ -391,7 +391,7 @@ paths:
                 type: object
                 properties:
                   code: { type: string, example: LOGO_TOO_LARGE }
-                  message: { type: string, example: Church logo must be 2MB or smaller. }
+                  message: { type: string, example: Church logo must be 5MB or smaller. }
 
   /api/v1/onboarding/church/step-4:
     patch:
@@ -672,6 +672,71 @@ paths:
       responses:
         '200':
           description: Membership rejected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  membership:
+                    $ref: '#/components/schemas/ChurchMembership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/join-requests/ban:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Ban a user from the church (church ADMIN/SUPER_ADMIN)
+      description: >
+        Marks the membership as banned and REJECTED. A banned user gets
+        403 BANNED_FROM_CHURCH on any further `POST /join-requests`. Per-church.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId: { type: string, format: uuid }
+                banReason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: User banned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  membership:
+                    $ref: '#/components/schemas/ChurchMembership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/join-requests/unban:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Unban a user from the church (church ADMIN/SUPER_ADMIN)
+      description: Reverses a ban so the user can submit join requests again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: User unbanned.
           content:
             application/json:
               schema:
@@ -984,6 +1049,9 @@ components:
         status: { $ref: '#/components/schemas/MembershipStatus' }
         joinedAt: { type: string, format: date-time, nullable: true }
         rejectionReason: { type: string, nullable: true }
+        isBanned: { type: boolean, default: false }
+        bannedAt: { type: string, format: date-time, nullable: true }
+        banReason: { type: string, nullable: true }
         user:
           type: object
           properties:

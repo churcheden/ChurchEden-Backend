@@ -17,7 +17,7 @@ const router = Router();
 
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 2 * 1024 * 1024 },
+    limits: { fileSize: 5 * 1024 * 1024 },
 });
 
 const uploadChurchLogo = upload.single('logo');
@@ -26,7 +26,7 @@ const handleLogoUpload = (req: Request, res: Response, next: NextFunction) => {
     uploadChurchLogo(req, res, (err: unknown) => {
         if (err) {
             if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-                return next(new AppError('Church logo must be 2MB or smaller.', 400, 'LOGO_TOO_LARGE'));
+                return next(new AppError('Church logo must be 5MB or smaller.', 400, 'LOGO_TOO_LARGE'));
             }
             return next(err);
         }

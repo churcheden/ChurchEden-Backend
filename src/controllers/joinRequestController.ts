@@ -8,8 +8,10 @@ import { AppError } from '../utils/AppError.js';
 import { CacheService, cacheKeys } from '../utils/cache.js';
 import type {
     ApproveJoinRequestInput,
+    BanUserInput,
     JoinRequestInput,
     RejectJoinRequestInput,
+    UnbanUserInput,
 } from '../schema/join.schema.js';
 
 const ADMIN_ROLES: ChurchRole[] = [ChurchRole.ADMIN, ChurchRole.SUPER_ADMIN];
@@ -63,8 +65,17 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 
     const existing = await prisma.churchMembership.findUnique({
         where: { userId_churchId: { userId, churchId } },
-        select: { id: true, status: true },
+        select: { id: true, status: true, isBanned: true, banReason: true },
     });
+
+    if (existing?.isBanned) {
+        wideLogger.addCtx('submit_join_request', 'banned');
+        throw new AppError(
+            'You are banned from joining this church.',
+            403,
+            'BANNED_FROM_CHURCH',
+        );
+    }
 
     if (existing?.status === 'APPROVED') {
         wideLogger.addCtx('submit_join_request', 'already_member');
@@ -240,6 +251,116 @@ export const rejectJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
     return res.status(200).json({
         status: 'success',
         message: 'Join request rejected.',
+        membership: updated,
+    });
+});
+
+// POST /api/v1/join-requests/ban
+// Admins use this to stop a member who keeps re-applying after repeated rejections.
+export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'ban_user');
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    }
+
+    wideLogger.addCtx('user_id', userId);
+
+    const input = req.body as BanUserInput;
+
+    const membership = await prisma.churchMembership.findUnique({
+        where: { id: input.membershipId },
+        select: { id: true, userId: true, status: true, isBanned: true },
+    });
+
+    if (!membership) {
+        wideLogger.addCtx('ban_user', 'request_not_found');
+        throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
+    }
+
+    if (membership.isBanned) {
+        wideLogger.addCtx('ban_user', 'already_banned');
+        return res.status(200).json({
+            status: 'success',
+            message: 'This user is already banned.',
+        });
+    }
+
+    const banReason = input.banReason?.trim() || null;
+
+    const updated = await prisma.churchMembership.update({
+        where: { id: membership.id },
+        data: {
+            status: 'REJECTED', // a banned user is not an active member
+            rejectionReason: banReason,
+            isBanned: true,
+            bannedAt: new Date(),
+            banReason,
+        },
+        include: MEMBERSHIP_INCLUDE,
+    });
+
+    await CacheService.delete(cacheKeys.userMe(membership.userId));
+
+    wideLogger.addCtx('ban_user', 'success');
+    wideLogger.addCtx('ban_requester_id', membership.userId);
+    return res.status(200).json({
+        status: 'success',
+        message: 'User banned from this church.',
+        membership: updated,
+    });
+});
+
+// POST /api/v1/join-requests/unban
+// Reverses a ban so the user can submit join requests again.
+export const unbanUser = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'unban_user');
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    }
+
+    wideLogger.addCtx('user_id', userId);
+
+    const input = req.body as UnbanUserInput;
+
+    const membership = await prisma.churchMembership.findUnique({
+        where: { id: input.membershipId },
+        select: { id: true, userId: true, status: true, isBanned: true },
+    });
+
+    if (!membership) {
+        wideLogger.addCtx('unban_user', 'request_not_found');
+        throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
+    }
+
+    if (!membership.isBanned) {
+        wideLogger.addCtx('unban_user', 'not_banned');
+        return res.status(200).json({
+            status: 'success',
+            message: 'This user is not banned.',
+        });
+    }
+
+    const updated = await prisma.churchMembership.update({
+        where: { id: membership.id },
+        data: {
+            isBanned: false,
+            bannedAt: null,
+            banReason: null,
+        },
+        include: MEMBERSHIP_INCLUDE,
+    });
+
+    await CacheService.delete(cacheKeys.userMe(membership.userId));
+
+    wideLogger.addCtx('unban_user', 'success');
+    wideLogger.addCtx('unban_requester_id', membership.userId);
+    return res.status(200).json({
+        status: 'success',
+        message: 'User unbanned from this church.',
         membership: updated,
     });
 });

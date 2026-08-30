@@ -144,8 +144,14 @@ model ChurchMembership {
   rejectionReason String? // set when an admin rejects a join request
   joinedAt        DateTime        @default(now()) // also serves as the join-request submission timestamp
 
+  // Manual admin ban: a user banned from a church can no longer submit join requests.
+  isBanned  Boolean   @default(false)
+  bannedAt  DateTime?
+  banReason String?
+
   @@unique([userId, churchId]) // a user can't join the same church twice
   @@index([churchId, status]) // admin Join Requests list: requests for a church filtered by status
+  @@index([churchId, isBanned]) // admin "banned users" list for a church
   @@map("ChurchMemberships")
 }
 

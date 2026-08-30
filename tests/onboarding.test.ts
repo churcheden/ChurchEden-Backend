@@ -216,10 +216,10 @@ describe('onboarding', () => {
             expect(res.body.code).toBe('INVALID_LOGO');
         });
 
-        it('400 — LOGO_TOO_LARGE via multer when the logo exceeds 2MB', async () => {
+        it('400 — LOGO_TOO_LARGE via multer when the logo exceeds 5MB', async () => {
             await seedSteps1to3(user.accessToken, 'Grace Assembly');
             const res = await patchStep3Multipart(user.accessToken)
-                .attach('logo', Buffer.alloc(2 * 1024 * 1024 + 1, 1), {
+                .attach('logo', Buffer.alloc(5 * 1024 * 1024 + 1, 1), {
                     filename: 'big.png',
                     contentType: 'image/png',
                 });

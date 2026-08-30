@@ -20,7 +20,7 @@ import {
 } from '../schema/onboarding.schema.js';
 import { PREDEFINED_MINISTRIES } from '../data/predefinedMinistries.js';
 
-const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 
 const LOGO_MIME_EXT: Record<string, string> = {
     'image/png': 'png',
@@ -58,7 +58,7 @@ const uploadChurchLogo = async (userId: string, file: Express.Multer.File): Prom
         throw new AppError('Church logo must be an SVG, PNG or JPG image.', 400, 'INVALID_LOGO');
     }
     if (file.size > MAX_LOGO_BYTES) {
-        throw new AppError('Church logo must be 2MB or smaller.', 400, 'LOGO_TOO_LARGE');
+        throw new AppError('Church logo must be 5MB or smaller.', 400, 'LOGO_TOO_LARGE');
     }
 
     const key = `church-logos/${userId}/${randomUUID()}.${ext}`;

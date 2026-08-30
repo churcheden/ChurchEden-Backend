@@ -76,7 +76,7 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 | --- | --- | --- |
 | 1 basics | `PATCH /onboarding/church/step-1` | `firstName`, `lastName`, `churchName`, `denomination`, `congregationSize`, `foundedYear?` |
 | 2 location | `PATCH /onboarding/church/step-2` | `country` (ISO alpha-2, e.g. `NG`), `city`, `address`, `phone`, `email`, `primaryLanguage`, `timeZone` |
-| 3 media | `PATCH /onboarding/church/step-3` | multipart: `logo` (≤ 2 MB) + `serviceTimes` as a **JSON string** |
+| 3 media | `PATCH /onboarding/church/step-3` | multipart: `logo` (≤ 5 MB) + `serviceTimes` as a **JSON string** |
 | 4 ministries | `PATCH /onboarding/church/step-4` | `ministryIds` + `customMinistries` |
 | draft | `GET /onboarding/church/draft` | `404 DRAFT_NOT_FOUND` until step 1 is saved |
 | complete | `POST /onboarding/church/complete` | Creates the church, SUPER_ADMIN membership, service times & ministries |
@@ -115,6 +115,13 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 | `GET /join-requests` | Own requests; admins add `?status=PENDING&churchId=` to list their church's pool; SUPER_ADMIN sees all churches |
 | `POST /join-requests/approve` `{ membershipId }` | Requires `ADMIN`/`SUPER_ADMIN` of that church |
 | `POST /join-requests/reject` `{ membershipId, rejectionReason? }` | Same role requirement |
+| `POST /join-requests/ban` `{ membershipId, banReason? }` | Bans the user from that church (any further `POST /join-requests` → `403 BANNED_FROM_CHURCH`) |
+| `POST /join-requests/unban` `{ membershipId }` | Reverses a ban so the user can submit a request again |
+
+**Banning.** `ban` marks the membership `isBanned` and REJECTED, storing an
+optional reason. A banned user is refused on submit with `403 BANNED_FROM_CHURCH`.
+Both `ban` and `unban` require `ADMIN`/`SUPER_ADMIN` of that church. Banning is
+per-church — it does not affect the user's memberships elsewhere.
 
 **Known gap:** approve/reject do **not** currently send the applicant a
 notification (email/SMS). Populate the client UI from the list response.
@@ -130,7 +137,9 @@ notification (email/SMS). Populate the client UI from the list response.
 | `GET /payments/subscription/cancel` | Cancels the active subscription |
 | `POST /webhooks/paystack` | Signed webhook; **responds 200 before async work**, so poll `verify` (or DB) rather than relying on webhook timing |
 
-- Money is in **kobo** (`SUBSCRIPTION_AMOUNT_KOBO`, currently 20000).
+- Money is in **Ghanaian cedis (GHS)**, passed to Paystack as the minor unit via
+  `SUBSCRIPTION_AMOUNT_KOBO` (default `2000`, i.e. GHS 20.00). Good to read from
+  `.env.example` — the exact value is environment-configurable.
 - A user with an active subscription gets `409 ALREADY_PREMIUM` from `initialize`.
 - **Webhook signatures:** HMAC-SHA512 of the raw request body with
   `PAYSTACK_SECRET_KEY` in the `x-paystack-signature` header. If you self-test
@@ -149,9 +158,9 @@ notification (email/SMS). Populate the client UI from the list response.
   - Uncaught errors: `{ status: "fail", error: "Internal Server Error" }` —
     `message`/`stack` are present in non-production.
 - Common codes: `VALIDATION_FAILED` (400), `UNAUTHORIZED` (401),
-  `MISSING_TOKEN` (401), `EMAIL_NOT_VERIFIED` (401), `PageNotFound` (404),
+  `MISSING_TOKEN` (401), `EMAIL_NOT_VERIFIED` (403), `PageNotFound` (404),
   `DRAFT_NOT_FOUND` (404), `TRANSACTION_NOT_FOUND` (404), `ALREADY_PREMIUM` (409),
-  `EMAIL_EXISTS` (409).
+  `EMAIL_EXISTS` (409), `BANNED_FROM_CHURCH` (403).
 - **Rate limits** (`express-rate-limit`, check middleware for exact windows):
   a global API limiter applies to all `/api/v1` routes, plus per-route limiters
   on register/login/OTP-resend and password endpoints. Exceeded → `429`.
