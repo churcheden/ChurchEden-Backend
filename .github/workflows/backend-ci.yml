@@ -9,12 +9,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      # A dedicated Neon Postgres URL (with a non-owner role) used to build the
-      # isolated `churcheden_test` schema. The runtime uses @prisma/adapter-neon
-      # which can only reach Neon endpoints, so a local postgres service
-      # container is not supported. Grant this role CREATE on the database.
-      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -30,6 +24,13 @@ jobs:
 
       - name: Prepare isolated test database
         run: npm run test:setup
+        env:
+          # Scoped to this step only. The setup script appends
+          # ?schema=churcheden_test and writes the final URL to .env.test.
+          # It must NOT leak into the test step — custom-env does not
+          # override existing env vars, so a stale DATABASE_URL would
+          # cause Prisma to connect to the wrong schema.
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
 
       - name: Run test suite
         run: npm test
