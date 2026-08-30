@@ -331,6 +331,62 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
         });
 });
 
+export const resendVerificationEmail = catchAsync(async(req: Request, res: Response) => {
+    wideLogger.addCtx('action', 'resend_verification_email');
+
+    const { email: rawEmail } = req.body;
+    const email = rawEmail?.trim().toLowerCase();
+
+    if(!email) {
+        wideLogger.addCtx('resend_verification_result', 'missing_email');
+        throw new AppError('Verification email is required!', 400, 'MISSING_EMAIL');
+    };
+
+    const cacheKey = cacheKeys.pendingRegistration(email);
+    const pending = await CacheService.get<{
+        hashedPassword: string;
+        otpHash: string;
+        attempts: number;
+        createdAt?: number;
+    }>(cacheKey);
+
+    if(!pending) {
+        wideLogger.addCtx('resend_verification_result', 'pending_not_found');
+        throw new AppError(
+            'No pending registration found for this email.',
+            400,
+            'PENDING_REGISTRATION_NOT_FOUND',
+        );
+    };
+
+    const otp = generateOTP();
+    pending.otpHash = await hashPassword(otp);
+    pending.attempts = 0;
+    await CacheService.set(cacheKey, pending, 600);
+
+    const otpSent = await emailService.sendVerificationOTPEmail(
+        email,
+        otp,
+        email.split('@')[0],
+    );
+
+    if (!otpSent) {
+        wideLogger.addCtx('resend_verification_result', 'email_send_failed');
+        throw new AppError(
+            'Could not send verification email. Please try again later.',
+            503,
+            'EMAIL_SEND_FAILED',
+        );
+    }
+
+    wideLogger.addCtx('resend_verification_result', 'success');
+    wideLogger.addCtx('verification_email_sent_to', email);
+    return res.status(200).json({
+        message: 'Verification OTP sent to your email!'
+    });
+});
+
+
 // Refresh Token
 export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         wideLogger.addCtx('action', 'refresh_token');
@@ -454,61 +510,6 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 
         wideLogger.addCtx('google_auth_result', 'success');
         return res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
-});
-
-export const resendVerificationEmail = catchAsync(async(req: Request, res: Response) => {
-        wideLogger.addCtx('action', 'resend_verification_email');
-
-        const { email: rawEmail } = req.body;
-        const email = rawEmail?.trim().toLowerCase();
-
-        if(!email) {
-            wideLogger.addCtx('resend_verification_result', 'missing_email');
-            throw new AppError('Verification email is required!', 400, 'MISSING_EMAIL');
-        };
-
-        const cacheKey = cacheKeys.pendingRegistration(email);
-        const pending = await CacheService.get<{
-            hashedPassword: string;
-            otpHash: string;
-            attempts: number;
-            createdAt?: number;
-        }>(cacheKey);
-
-        if(!pending) {
-            wideLogger.addCtx('resend_verification_result', 'pending_not_found');
-            throw new AppError(
-                'No pending registration found for this email.',
-                400,
-                'PENDING_REGISTRATION_NOT_FOUND',
-            );
-        };
-
-        const otp = generateOTP();
-        pending.otpHash = await hashPassword(otp);
-        pending.attempts = 0;
-        await CacheService.set(cacheKey, pending, 600);
-
-        const otpSent = await emailService.sendVerificationOTPEmail(
-            email,
-            otp,
-            email.split('@')[0],
-        );
-
-        if (!otpSent) {
-            wideLogger.addCtx('resend_verification_result', 'email_send_failed');
-            throw new AppError(
-                'Could not send verification email. Please try again later.',
-                503,
-                'EMAIL_SEND_FAILED',
-            );
-        }
-
-        wideLogger.addCtx('resend_verification_result', 'success');
-        wideLogger.addCtx('verification_email_sent_to', email);
-        return res.status(200).json({
-            message: 'Verification OTP sent to your email!'
-        });
 });
 
 // Logout
