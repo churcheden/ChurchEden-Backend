@@ -91,6 +91,7 @@ model User {
   transactions      Transaction[]
   refreshTokens     RefreshToken[]
   churchMemberships ChurchMembership[]
+  churchRequests    ChurchRequest[]
 
   @@index([isPremium])
   @@map("Users")
@@ -224,4 +225,19 @@ model Transaction {
   @@index([userId])
   @@index([reference])
   @@map("Transactions")
+}
+
+model ChurchRequest {
+  id           String   @id @default(uuid())
+  churchName   String
+  city         String
+  leaderName   String
+  phoneContact String?
+  emailContact String?
+  requestedById String
+  requestedBy  User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+
+  @@index([requestedById])
+  @@map("ChurchRequests")
 }

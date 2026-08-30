@@ -42,13 +42,24 @@ router.post('/resend-verification', resendVerificationLimitter, validateBody(res
 
 // Google OAuth
 router.get('/google/url', getGoogleAuthUrl);
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
+router.get('/google', (req, res, next) => {
+    const platform = (req.query.platform as string) || 'web';
+    passport.authenticate('google', {
+        scope: ['profile', 'email'],
+        session: false,
+        state: platform,
+    })(req, res, next);
+});
 router.get('/google/callback',
     (req, res, next) => {
-        const frontendUrl = env.FRONTEND_URL;
+        const platform = (req.query.state as string) || 'web';
+        const failureRedirect = platform === 'mobile'
+            ? 'churcheden://auth/callback?error=auth_failed'
+            : `${env.FRONTEND_URL}/sign-in?error=auth_failed`;
+
         passport.authenticate('google', {
             session: false,
-            failureRedirect: `${frontendUrl}/sign-in?error=auth_failed`,
+            failureRedirect,
         })(req, res, next);
     },
     googleCallback as RequestHandler

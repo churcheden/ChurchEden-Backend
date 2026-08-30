@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import passport from 'passport';
 import authRoutes from './routes/authRoutes.js';
+import churchRequestRoutes from './routes/churchRequestRoutes.js';
 import paymentRoutes from './routes/paymentRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import onboardingRoutes from './routes/onboardingRoutes.js';
@@ -69,6 +70,7 @@ app.use('/auth', authRoutes);
 app.use('/api/v1/payments', paymentRoutes);
 app.use('/api/v1/members', profileRoutes);
 app.use('/api/v1/onboarding/church', onboardingRoutes);
+app.use('/api/v1/church-requests', churchRequestRoutes);
 app.use('/api/v1/join-requests', joinRequestRoutes);
 
 app.all(/.*/, (req, _res, next) => {

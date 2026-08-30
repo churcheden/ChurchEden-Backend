@@ -63,3 +63,11 @@ export const resendVerificationLimitter = rateLimit({
         return email ? `email:${email}` : ipKeyGenerator(req.ip as string);
     },
 });
+
+export const churchRequestLimiter = createLimiter({
+    prefix: 'rl:church-request:',
+    windowMs: 60 * 60 * 1000,
+    max: 5,
+    message: 'Too many church registration requests, please try again later',
+});
+

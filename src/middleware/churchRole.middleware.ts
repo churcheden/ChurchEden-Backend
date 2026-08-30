@@ -22,10 +22,10 @@ export const requireChurchRole = (roles: ChurchRole[], resolveChurchId: ChurchId
 
             const membership = await prisma.churchMembership.findUnique({
                 where: { userId_churchId: { userId, churchId } },
-                select: { role: true, status: true },
+                select: { role: true, status: true, isBanned: true },
             });
 
-            if (!membership || membership.status !== 'APPROVED' || !roles.includes(membership.role)) {
+            if (!membership || membership.status !== 'APPROVED' || membership.isBanned || !roles.includes(membership.role)) {
                 throw new AppError('You do not have permission to perform this action.', 403, 'FORBIDDEN');
             }
 

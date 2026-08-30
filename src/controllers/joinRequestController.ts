@@ -129,7 +129,7 @@ export const getJoinRequests = catchAsync(async (req: AuthenticatedRequest, res:
     wideLogger.addCtx('user_id', userId);
 
     const managed = await prisma.churchMembership.findMany({
-        where: { userId, status: 'APPROVED', role: { in: ADMIN_ROLES } },
+        where: { userId, status: 'APPROVED', isBanned: false, role: { in: ADMIN_ROLES } },
         select: { churchId: true },
     });
 
@@ -287,13 +287,11 @@ export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Respons
         });
     }
 
-    const banReason = input.banReason?.trim() || null;
+    const banReason = input.banReason.trim();
 
     const updated = await prisma.churchMembership.update({
         where: { id: membership.id },
         data: {
-            status: 'REJECTED', // a banned user is not an active member
-            rejectionReason: banReason,
             isBanned: true,
             bannedAt: new Date(),
             banReason,

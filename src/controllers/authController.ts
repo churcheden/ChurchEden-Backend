@@ -464,7 +464,8 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
 
 // Google OAuth — returns the URL the frontend should redirect the browser to
 export const getGoogleAuthUrl = catchAsync(async(req: Request, res: Response) => {
-    const url = `${req.protocol}://${req.get('host')}/api/v1/auth/google`;
+    const platform = (req.query.platform as string) || (req.headers['x-client-platform'] as string) || 'web';
+    const url = `${req.protocol}://${req.get('host')}/api/v1/auth/google?platform=${platform}`;
 
     return res.status(200).json({
         status: 'success',
@@ -477,9 +478,13 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         wideLogger.addCtx('action', 'google_callback');
         const user = req.user;
         const frontendUrl = env.FRONTEND_URL;
+        const platform = (req.query.state as string) || (req.headers['x-client-platform'] as string) || 'web';
 
         if(!user) {
             wideLogger.addCtx('google_auth_result', 'no_user');
+            if (platform === 'mobile') {
+                return res.redirect('churcheden://auth/callback?error=auth_failed');
+            }
             return res.redirect(`${frontendUrl}/sign-in?error=auth_failed`);
         };
 
@@ -515,14 +520,20 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
             email: user.email,
         });
 
-        setAuthCookies(res, accessToken, refreshToken);
-
         const hasProfile = await prisma.memberProfile.findUnique({
             where: { userId: user.id },
         });
 
         wideLogger.addCtx('google_auth_result', 'success');
         wideLogger.addCtx('profile_complete', !!hasProfile);
+
+        if (platform === 'mobile') {
+            return res.redirect(
+                `churcheden://auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}&profileComplete=${!!hasProfile}`
+            );
+        }
+
+        setAuthCookies(res, accessToken, refreshToken);
         return res.redirect(`${frontendUrl}/auth/callback?profileComplete=${!!hasProfile}`);
 });
 
