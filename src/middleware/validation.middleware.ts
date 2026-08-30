@@ -53,7 +53,14 @@ export const validateQuery = (schema: ZodType<any>) => {
     return (req: Request, res: Response, next: NextFunction) => {
         try {
             const validatedData = schema.parse(req.query);
-            req.query = validatedData as Record<string, string | string[] | undefined>;
+            // Express 5 defines `req.query` as a prototype getter, so a plain
+            // assignment throws. Shadow it with an own, configurable property.
+            Object.defineProperty(req, 'query', {
+                value: validatedData,
+                writable: true,
+                configurable: true,
+                enumerable: true,
+            });
             next();
         } catch (error) {
             if (error instanceof ZodError) {

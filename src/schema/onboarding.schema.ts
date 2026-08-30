@@ -3,7 +3,22 @@ import { CongregationSize, ChurchLanguage } from '@prisma/client';
 
 export const CHURCH_ONBOARDING_DRAFT_TTL_SECONDS = 86400;
 
+// Node's Intl.supportedValuesOf('timeZone') excludes both 'UTC' and every 'Etc/*'
+// zone, even though they are canonical IANA names. We accept 'UTC' (the most
+// commonly sent value) and normalize it to 'Etc/UTC' for storage, and that
+// normalized value is admitted explicitly since the runtime list omits it.
 const IANA_TIME_ZONES = new Set(Intl.supportedValuesOf('timeZone'));
+
+const normalizeTimeZone = (value: string): string =>
+    value.trim().toUpperCase() === 'UTC' ? 'Etc/UTC' : value;
+
+const timeZoneSchema = z
+    .string()
+    .transform(normalizeTimeZone)
+    .refine(
+        (tz) => tz === 'Etc/UTC' || IANA_TIME_ZONES.has(tz),
+        { message: 'Invalid time zone. Use a valid IANA time zone name (e.g. Europe/London, Africa/Accra).' }
+    );
 
 export const step1Schema = z.object({
     firstName: z.string().trim().min(1).max(60),
@@ -21,9 +36,7 @@ export const step2Schema = z.object({
     phone: z.string().trim().min(1),
     email: z.email('Invalid church email address!').max(255),
     primaryLanguage: z.nativeEnum(ChurchLanguage),
-    timeZone: z.string().trim().refine((tz) => IANA_TIME_ZONES.has(tz), {
-        message: 'Invalid IANA time zone',
-    }),
+    timeZone: timeZoneSchema,
 });
 
 export const serviceTimeSchema = z.object({

@@ -1,11 +1,13 @@
 import type { Response } from 'express';
+import crypto from 'crypto';
 import { env } from '../env.js';
 import { prisma } from '../config/prisma.js';
-import { hashPassword } from './password.js';
 import { generateAccessToken, generateRefreshToken } from './jwt.js';
 
 const ACCESS_TOKEN_MAX_AGE_MS = 15 * 60 * 1000;
 const REFRESH_TOKEN_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+const sha256 = (value: string): string => crypto.createHash('sha256').update(value).digest('hex');
 
 const cookieOptions = (maxAge: number) => ({
     httpOnly: true,
@@ -43,7 +45,11 @@ export const issueAuthTokens = async (
         generateRefreshToken({ id: user.id, email: user.email }),
     ]);
 
-    const hashedRefreshToken = await hashPassword(refreshToken);
+    // bcrypt truncates input at 72 bytes, and two refresh tokens for the same
+    // user differ only near the end of the JWT — so a plain bcrypt hash would
+    // be identical for every token a user is issued, defeating rotation and
+    // revocation. Hash the full token with SHA-256 instead.
+    const hashedRefreshToken = sha256(refreshToken);
 
     await prisma.refreshToken.create({
         data: {

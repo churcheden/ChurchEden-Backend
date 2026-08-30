@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { redisClient } from '../config/redis.js';
 
@@ -60,6 +60,6 @@ export const resendVerificationLimitter = rateLimit({
     legacyHeaders: false,
     keyGenerator: (req) => {
         const email = (req.body as { email?: string } | undefined)?.email?.trim().toLowerCase();
-        return email ? `email:${email}` : (req.ip ?? 'unknown');
+        return email ? `email:${email}` : ipKeyGenerator(req.ip as string);
     },
 });

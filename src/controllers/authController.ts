@@ -1,8 +1,9 @@
 import type { Request, Response } from "express";
 import { prisma } from '../config/prisma.js'
 import { comparePasswords, hashPassword } from '../utils/password.js'
-import { verifyRefreshToken } from "../utils/jwt.js";
+import { verifyRefreshToken, verifyAccessToken } from "../utils/jwt.js";
 import type { AuthenticatedRequest } from "../middleware/auth.middleware.js";
+import { extractAccessToken } from "../middleware/auth.middleware.js";
 import crypto from 'crypto';
 import { env } from "../env.js";
 import { emailService } from "../services/email.service.js";
@@ -22,7 +23,7 @@ import {
 const getRefreshTokenFromRequest = (req: Request) => {
     const platform = req.headers['x-client-platform'];
     if (platform === 'web') return req.cookies?.refreshToken || null;
-    return req.body.refreshToken || req.cookies?.refreshToken || null;
+    return req.body?.refreshToken || req.cookies?.refreshToken || null;
 };
 
 const resetTokenHashesMatch = (hashedToken: string, storedHash: string): boolean => {
@@ -397,7 +398,14 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
             throw new AppError("Refresh token required!", 401, 'MISSING_TOKEN');
         };
 
-        const payload = await verifyRefreshToken(refreshTokenValue);
+        let payload;
+        try {
+            payload = await verifyRefreshToken(refreshTokenValue);
+        } catch {
+            // Covers expired, malformed and tampered refresh tokens — always a
+            // clean 401, never an unhandled 500 from the JWT library.
+            throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
+        }
 
         const user = await prisma.user.findUnique({
             where: { id: payload.id },
@@ -418,8 +426,9 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         });
 
         let matchedRecord: { id: string } | null = null;
+        const candidateHash = crypto.createHash('sha256').update(refreshTokenValue).digest('hex');
         for (const record of storedTokens) {
-            if (await comparePasswords(refreshTokenValue, record.tokenHash)) {
+            if (resetTokenHashesMatch(candidateHash, record.tokenHash)) {
                 matchedRecord = record;
                 break;
             }
@@ -522,6 +531,20 @@ export const logoutUser = catchAsync(async(req: AuthenticatedRequest, res: Respo
     wideLogger.addCtx('action', 'user_logout');
 
     let userId = req.user?.id;
+
+    if (!userId) {
+        // The logout route does not require auth middleware, so resolve the
+        // user from a present access token (header or cookie) first.
+        const accessToken = extractAccessToken(req);
+        if (accessToken) {
+            try {
+                const payload = await verifyAccessToken(accessToken);
+                userId = payload.id;
+            } catch {
+                wideLogger.addCtx('logout_result', 'invalid_access_token');
+            }
+        }
+    }
 
     if (!userId) {
         const refreshTokenValue = getRefreshTokenFromRequest(req);

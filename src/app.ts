@@ -52,10 +52,6 @@ app.use(helmet({
     }
 }));
 
-app.use(passport.initialize());
-app.use(apiLimitter);
-app.use(wideLoggerMiddleware);
-
 app.get('/health', (_req, res) => {
     res.status(200).json({
         status: 'OK',
@@ -63,6 +59,10 @@ app.get('/health', (_req, res) => {
         service: 'ChurchEden Backend API'
     });
 });
+
+app.use(passport.initialize());
+app.use(apiLimitter);
+app.use(wideLoggerMiddleware);
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/auth', authRoutes);

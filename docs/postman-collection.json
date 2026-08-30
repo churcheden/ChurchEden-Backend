@@ -1,0 +1,394 @@
+{
+  "info": {
+    "name": "ChurchEden Backend API",
+    "description": "Variables: baseUrl (default https://api.churcheden.app/api/v1), accessToken, refreshToken, churchId, membershipId, reference. On login/refresh the accessToken and refreshToken variables are captured automatically.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.churcheden.app/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "churchId", "value": "" },
+    { "key": "membershipId", "value": "" },
+    { "key": "reference", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\",\n  \"password\": \"StrongPass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register", "host": ["{{baseUrl}}"], "path": ["auth", "register"] }
+          }
+        },
+        {
+          "name": "Verify email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\",\n  \"otp\": \"123456\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/verify-email", "host": ["{{baseUrl}}"], "path": ["auth", "verify-email"] }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data) {",
+                  "  pm.collectionVariables.set('accessToken', body.data.accessToken || '');",
+                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken || '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"founder@example.com\",\n  \"password\": \"StrongPass123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Refresh token (mobile: body)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data) {",
+                  "  pm.collectionVariables.set('accessToken', body.data.accessToken || '');",
+                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken || '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me", "host": ["{{baseUrl}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Logout (mobile: body refreshToken)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Google auth URL",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/google/url", "host": ["{{baseUrl}}"], "path": ["auth", "google", "url"] }
+          }
+        },
+        {
+          "name": "Forgot password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"founder@example.com\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/forgot-password", "host": ["{{baseUrl}}"], "path": ["auth", "forgot-password"] }
+          }
+        },
+        {
+          "name": "Reset password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"token\": \"{{resetToken}}\",\n  \"newPassword\": \"NewStrongPass123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/auth/reset-password", "host": ["{{baseUrl}}"], "path": ["auth", "reset-password"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Onboarding",
+      "item": [
+        {
+          "name": "Step 1 - basics",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Doe\",\n  \"churchName\": \"Grace Chapel\",\n  \"denomination\": \"Pentecostal\",\n  \"congregationSize\": \"RANGE_101_500\",\n  \"foundedYear\": 2005\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-1", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-1"] }
+          }
+        },
+        {
+          "name": "Step 2 - location & contact",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"country\": \"NG\",\n  \"city\": \"Lagos\",\n  \"address\": \"12 Broad Street\",\n  \"phone\": \"+2348012345678\",\n  \"email\": \"church@example.com\",\n  \"primaryLanguage\": \"ENGLISH\",\n  \"timeZone\": \"Europe/London\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-2", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-2"] }
+          }
+        },
+        {
+          "name": "Step 3 - logo & service times",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "logo", "type": "file", "src": [] },
+                { "key": "serviceTimes", "value": "[{\"label\":\"Sunday Service\",\"dayOfWeek\":0,\"time\":\"10:30\"}]" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-3", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-3"] }
+          }
+        },
+        {
+          "name": "Step 4 - ministries",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ministryIds\": [],\n  \"customMinistries\": [\n    {\"name\": \"Choir\", \"type\": \"MINISTRY\", \"description\": \"Worship team\"}\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-4", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-4"] }
+          }
+        },
+        {
+          "name": "Draft",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/onboarding/church/draft", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "draft"] }
+          }
+        },
+        {
+          "name": "Complete onboarding",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.churchId) pm.collectionVariables.set('churchId', body.data.churchId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": { "raw": "{{baseUrl}}/onboarding/church/complete", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "complete"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Members",
+      "item": [
+        {
+          "name": "Complete profile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "profilePhoto", "type": "file", "src": [] },
+                { "key": "fullName", "value": "Jane Doe" },
+                { "key": "dateOfBirth", "value": "1990-01-01" },
+                { "key": "gender", "value": "FEMALE" },
+                { "key": "phoneNumber", "value": "+2348021234567" },
+                { "key": "contactEmail", "value": "jane@example.com" },
+                { "key": "city", "value": "Lagos" },
+                { "key": "address", "value": "1 Test Street" },
+                { "key": "maritalStatus", "value": "SINGLE" },
+                { "key": "occupation", "value": "Engineer" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/members/profile/complete", "host": ["{{baseUrl}}"], "path": ["members", "profile", "complete"] }
+          }
+        },
+        {
+          "name": "Get profile",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/members/profile", "host": ["{{baseUrl}}"], "path": ["members", "profile"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Join Requests",
+      "item": [
+        {
+          "name": "Submit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.membership && body.membership.id) pm.collectionVariables.set('membershipId', body.membership.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"churchId\": \"{{churchId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/join-requests", "host": ["{{baseUrl}}"], "path": ["join-requests"] }
+          }
+        },
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/join-requests", "host": ["{{baseUrl}}"], "path": ["join-requests"] }
+          }
+        },
+        {
+          "name": "Approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"membershipId\": \"{{membershipId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/join-requests/approve", "host": ["{{baseUrl}}"], "path": ["join-requests", "approve"] }
+          }
+        },
+        {
+          "name": "Reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"membershipId\": \"{{membershipId}}\",\n  \"rejectionReason\": \"Closed membership\"\n}" },
+            "url": { "raw": "{{baseUrl}}/join-requests/reject", "host": ["{{baseUrl}}"], "path": ["join-requests", "reject"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Initialize",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.reference) pm.collectionVariables.set('reference', body.data.reference);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/payments/initialize", "host": ["{{baseUrl}}"], "path": ["payments", "initialize"] }
+          }
+        },
+        {
+          "name": "Verify reference",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/payments/initialize/verify/{{reference}}", "host": ["{{baseUrl}}"], "path": ["payments", "initialize", "verify", "{{reference}}"] }
+          }
+        },
+        {
+          "name": "Cancel subscription",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/payments/subscription/cancel", "host": ["{{baseUrl}}"], "path": ["payments", "subscription", "cancel"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "https://api.churcheden.app/health", "host": ["https://api.churcheden.app"], "path": ["health"] }
+          }
+        }
+      ]
+    }
+  ]
+}

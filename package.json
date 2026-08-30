@@ -14,7 +14,10 @@
     "p:studio": "prisma studio",
     "p:gen": "prisma generate",
     "p:push": "prisma db push",
-    "p:format": "prisma format"
+    "p:format": "prisma format",
+    "test:setup": "tsx scripts/test-db-setup.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -62,14 +65,17 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/multer": "^2.1.0",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.9.5",
     "@types/passport": "^1.0.17",
     "@types/passport-google-oauth20": "^2.0.17",
     "@types/pdf-parse": "^1.1.5",
+    "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
     "dotenv": "^17.4.2",
     "nodemon": "^3.1.14",
+    "supertest": "^7.2.2",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
   }
 }

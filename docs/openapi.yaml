@@ -1,0 +1,1013 @@
+openapi: 3.0.3
+info:
+  title: ChurchEden Backend API
+  description: >
+    REST API for ChurchEden — church onboarding, membership, join-requests,
+    authentication (email + Google OAuth) and Paystack payments.
+
+    Notes:
+      - Base paths: the API is served under `/api/v1`. The auth router is additionally
+        mounted at `/auth/*` and the payment router at `/api/v1/payments/*` **and**
+        `/api/v1/*` (duplicate mount — see each payment path).
+      - Auth strategy: web clients receive the JWT pair as `HttpOnly` cookies
+        (`token`, `refreshToken`). Mobile clients should send
+        `Authorization: Bearer <accessToken>` and pass `refreshToken` in the body of
+        POST /api/v1/refresh. Send `x-client-platform: mobile` on mobile requests.
+      - Money is denominated in **kobo** (`SUBSCRIPTION_AMOUNT_KOBO`).
+  version: 1.0.0
+servers:
+  - url: https://api.churcheden.app
+    description: Production
+  - url: https://staging-api.churcheden.app
+    description: Staging
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Auth
+    description: Registration, login, email verification, password reset, Google OAuth, logout.
+  - name: Onboarding
+    description: Church founder onboarding (steps 1–4, draft, complete).
+  - name: Members
+    description: Member profile.
+  - name: Join Requests
+    description: Submit, list, approve and reject church join-requests.
+  - name: Payments
+    description: Paystack subscription initialize / verify / cancel and webhooks.
+  - name: Health
+description: ''
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: OK }
+                  date: { type: string, format: date-time }
+                  service: { type: string, example: ChurchEden Backend API }
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201':
+          description: User created; verification OTP email queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login, set JWT cookies
+      description: >
+        On success the `token` and `refreshToken` HttpOnly cookies are set.
+        Unverified users receive a 401/EMAIL_NOT_VERIFIED-style error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Authenticated; JWT cookies set.
+          headers:
+            Set-Cookie:
+              schema: { type: string, description: token + refreshToken HttpOnly cookies }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token (and the present access token)
+      description: >
+        No auth middleware. Accepts either `Authorization: Bearer <accessToken>`
+        (revoked) or `{ "refreshToken": "<refresh>" }` in the body (mobile).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string, description: Hashed and revoked server-side }
+      responses:
+        '200':
+          description: Logged out (idempotent).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/me:
+    get:
+      tags: [Auth]
+      security: [{ bearerAuth: [] }]
+      summary: Current user
+      responses:
+        '200':
+          description: Current user payload.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the refresh token
+      description: >
+        Web: omit the body so the `refreshToken` HttpOnly cookie is used.
+        Mobile: send `{ "refreshToken": "<refresh>" }`. Always returns fresh
+        tokens in the body (`accessToken`, `refreshToken`) and re-sets cookies.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken: { type: string, minLength: 32 }
+      responses:
+        '200':
+          description: Rotated token pair.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request a password reset link/token
+      description: Always succeeds for unknown emails (no enumeration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: Reset email sent (or would have been). }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Complete a password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, newPassword]
+              properties:
+                token: { type: string }
+                newPassword: { type: string, minLength: 8 }
+      responses:
+        '200': { description: Password updated. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: Verify an email address with a 6-digit OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email: { type: string, format: email }
+                otp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '200': { description: Email verified. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/v1/auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend the verification OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        '200': { description: OTP resent. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/google/url:
+    get:
+      tags: [Auth]
+      summary: Returns the URL the frontend redirects to for Google sign-in
+      responses:
+        '200':
+          description: Authorization URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  url:
+                    type: string
+                    example: http://localhost:8080/api/v1/auth/google
+
+  /api/v1/auth/google:
+    get:
+      tags: [Auth]
+      summary: Start Google OAuth flow (302 to accounts.google.com)
+      responses:
+        '302':
+          description: Redirects the browser to Google.
+
+  /api/v1/auth/google/callback:
+    get:
+      tags: [Auth]
+      summary: Google OAuth callback
+      description: >
+        On success the JWT cookies are set and the browser is redirected to
+        `${FRONTEND_URL}/auth/callback?profileComplete=<true|false>`.
+        A new Google account gets a welcome email; existing email accounts are
+        linked and verified. On failure the browser is redirected to
+        `${FRONTEND_URL}/sign-in?error=auth_failed`.
+      parameters:
+        - in: query
+          name: code
+          schema: { type: string }
+        - in: query
+          name: state
+          schema: { type: string }
+      responses:
+        '302':
+          description: Redirect to the frontend with the outcome.
+
+  /api/v1/onboarding/church/step-1:
+    patch:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Save founder + church basics
+      description: Existing values for later steps are preserved (merge).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [firstName, lastName, churchName, denomination, congregationSize]
+              properties:
+                firstName: { type: string, maxLength: 60 }
+                lastName: { type: string, maxLength: 60 }
+                churchName: { type: string, maxLength: 150 }
+                denomination: { type: string, maxLength: 100 }
+                congregationSize:
+                  $ref: '#/components/schemas/CongregationSize'
+                foundedYear:
+                  type: integer
+                  minimum: 1500
+                  maximum: 2026
+                  nullable: true
+      responses:
+        '200':
+          description: Step saved (draft cached).
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/onboarding/church/step-2:
+    patch:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Save church location & contact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [country, city, address, phone, email, primaryLanguage, timeZone]
+              properties:
+                country:
+                  type: string
+                  description: ISO 3166-1 alpha-2 code, e.g. NG (used for phone parsing).
+                city: { type: string, maxLength: 100 }
+                address: { type: string, maxLength: 255 }
+                phone: { type: string, description: International format recommended, e.g. +2348012345678 }
+                email: { type: string, format: email, maxLength: 255 }
+                primaryLanguage: { $ref: '#/components/schemas/ChurchLanguage' }
+                timeZone:
+                  type: string
+                  description: >-
+                    IANA name, e.g. Europe/London or Africa/Accra. 'UTC' (case-insensitive)
+                    is accepted and normalized to 'Etc/UTC'.
+      responses:
+        '200': { description: Step saved. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/onboarding/church/step-3:
+    patch:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Upload the church logo and save service times
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                logo:
+                  type: string
+                  format: binary
+                  description: Max 2 MB.
+                serviceTimes:
+                  type: string
+                  description: JSON-encoded array of service time objects.
+              required: [serviceTimes]
+      responses:
+        '200': { description: Step saved. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Logo too large
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, example: LOGO_TOO_LARGE }
+                  message: { type: string, example: Church logo must be 2MB or smaller. }
+
+  /api/v1/onboarding/church/step-4:
+    patch:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Select ministries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ministryIds:
+                  type: array
+                  items: { type: string, format: uuid }
+                  description: Predefined ministries. Default [].
+                customMinistries:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CustomMinistry'
+                  default: []
+      responses:
+        '200': { description: Step saved. }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/onboarding/church/draft:
+    get:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Read the in-progress onboarding draft
+      description: Raises DRAFT_NOT_FOUND (404) when no steps have been saved.
+      responses:
+        '200':
+          description: Full draft.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  data:
+                    $ref: '#/components/schemas/OnboardingDraft'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/onboarding/church/complete:
+    post:
+      tags: [Onboarding]
+      security: [{ bearerAuth: [] }]
+      summary: Create the church, admin membership and default ministries
+      description: >
+        Requires all four steps to be saved. Creates the Church, a SUPER_ADMIN
+        ChurchMembership for the caller, service times and ministries, then
+        clears the draft cache.
+      responses:
+        '200':
+          description: Church created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  data:
+                    type: object
+                    properties:
+                      churchId: { type: string, format: uuid }
+        '400':
+          description: Onboarding incomplete or invalid inputs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: ONBOARDING_INCOMPLETE
+                  message: { type: string }
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/members/profile/complete:
+    post:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Complete the member profile
+      description: >
+        One profile per user. Submitting again upserts it. `profilePhoto` is
+        optional (max 5 MB, PNG/JPEG/WebP). Profile edits are intentionally
+        independent of the Google-sourced `fullName`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                profilePhoto:
+                  type: string
+                  format: binary
+                  description: Max 5 MB.
+                fullName: { type: string, maxLength: 120 }
+                dateOfBirth: { type: string, format: date }
+                gender: { $ref: '#/components/schemas/Gender' }
+                phoneNumber: { type: string, description: E.164, e.g. +233241234567 }
+                contactEmail: { type: string, format: email }
+                city: { type: string, maxLength: 100 }
+                address: { type: string, maxLength: 255 }
+                maritalStatus: { $ref: '#/components/schemas/MaritalStatus' }
+                occupation: { type: string, maxLength: 100 }
+              required: [fullName, dateOfBirth, gender, phoneNumber, contactEmail, city, address, maritalStatus]
+      responses:
+        '200':
+          description: Profile saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  profile:
+                    $ref: '#/components/schemas/MemberProfile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Photo too large
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, example: PHOTO_TOO_LARGE }
+                  message: { type: string, example: Profile photo must be 5MB or smaller. }
+
+  /api/v1/members/profile:
+    get:
+      tags: [Members]
+      security: [{ bearerAuth: [] }]
+      summary: Get the current member profile
+      responses:
+        '200':
+          description: Profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  profile:
+                    $ref: '#/components/schemas/MemberProfile'
+        '404':
+          description: Profile not completed yet (PROFILE_NOT_FOUND).
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/join-requests:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Submit a join-request for a church
+      description: Returns MEMBERSHIP_INCLUDE-style errors when already approved or pending.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [churchId]
+              properties:
+                churchId: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Request created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  membership:
+                    $ref: '#/components/schemas/ChurchMembership'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/join-requests:
+    get:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: List join-requests
+      description: >
+        Returns the caller's own requests. Admins may filter by `churchId` to list
+        pending memberships for their church (SUPER_ADMIN acts on all churches).
+      parameters:
+        - in: query
+          name: status
+          schema: { $ref: '#/components/schemas/MembershipStatus' }
+          description: Defaults to PENDING for admin listings.
+        - in: query
+          name: churchId
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Matching memberships with joined user + profile.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  memberships:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChurchMembership'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/join-requests/approve:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Approve a pending membership (church ADMIN/SUPER_ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Membership approved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  membership:
+                    $ref: '#/components/schemas/ChurchMembership'
+        '403':
+          description: Caller is not an admin of the target church.
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/join-requests/reject:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Reject a pending membership (church ADMIN/SUPER_ADMIN)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId: { type: string, format: uuid }
+                rejectionReason: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Membership rejected.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  membership:
+                    $ref: '#/components/schemas/ChurchMembership'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/payments/initialize:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Initialize a Paystack subscription charge
+      description: >
+        Uses GET (as implemented). Generates a reference, stores a pending
+        Transaction, and returns an `authorizationUrl` to open for the payer.
+        Duplicate-mount note: also available at `/api/v1/initialize`.
+        A user with an active subscription gets 409 ALREADY_PREMIUM.
+      responses:
+        '200':
+          description: Paystack checkout URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  data:
+                    type: object
+                    properties:
+                      authorizationUrl: { type: string }
+                      reference: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '400':
+          description: Paystack rejected the plan (PAYSTACK_ERROR).
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/payments/initialize/verify/{reference}:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Verify a transaction against Paystack
+      description: >
+        Duplicate-mount note: also available at `/api/v1/initialize/verify/{reference}`.
+      parameters:
+        - in: path
+          name: reference
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Payment status.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  data:
+                    type: object
+                    properties:
+                      transaction:
+                        $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Not paid yet (PAYMENT_FAILED) or Paystack error.
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: Unknown reference (TRANSACTION_NOT_FOUND).
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/payments/subscription/cancel:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Cancel the active Paystack subscription
+      description: >
+        Duplicate-mount note: also available at `/api/v1/subscription/cancel`.
+        Returns 404 NO_SUBSCRIPTION when the user has no active subscription.
+      responses:
+        '200': { description: Subscription canceled. }
+        '400':
+          description: Paystack error.
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/webhooks/paystack:
+    post:
+      tags: [Payments]
+      summary: Paystack webhook (unauthenticated)
+      description: >
+        Expects `application/json` and verifies `x-paystack-signature` (sha512 HMAC
+        over the raw body using PAYSTACK_SECRET_KEY). Responds 200 immediately and
+        processes asynchronously. Handles charge.success, charge.failed,
+        subscription.create, subscription.disable, invoice.update and
+        invoice.payment_failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaystackWebhook'
+      responses:
+        '200': { description: Accepted. }
+        '401':
+          description: Invalid signature.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: fail }
+                  message: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Authorization: Bearer <accessToken> (also accepted via cookie for web clients).'
+
+  responses:
+    ValidationError:
+      description: Invalid request body/params/query.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status, code, message]
+            properties:
+              status: { type: string, example: error }
+              code: { type: string, example: VALIDATION_FAILED }
+              message: { type: string, example: Validation failed! }
+              details:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string }
+                    code: { type: string }
+                    message: { type: string }
+    Unauthorized:
+      description: Missing/invalid token, or invalid credentials.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              code:
+                type: string
+                enum: [UNAUTHORIZED, MISSING_TOKEN, EMAIL_NOT_VERIFIED]
+              message: { type: string }
+    Forbidden:
+      description: Authenticated but not permitted.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              code: { type: string, example: FORBIDDEN }
+              message: { type: string }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              code: { type: string, example: PageNotFound }
+              message: { type: string }
+    BadRequest:
+      description: Business rule violation.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              code: { type: string }
+              message: { type: string }
+    Conflict:
+      description: Resource conflict.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              code: { type: string, example: EMAIL_EXISTS }
+              message: { type: string }
+    RateLimited:
+      description: Too many requests.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              status: { type: string, example: error }
+              message: { type: string, example: Too many requests }
+
+  schemas:
+    CongregationSize:
+      type: string
+      enum: [RANGE_1_100, RANGE_101_500, RANGE_501_1000, RANGE_1001_2000, RANGE_2000_PLUS]
+    ChurchLanguage:
+      type: string
+      enum: [ENGLISH, FRENCH, SPANISH]
+    Gender:
+      type: string
+      enum: [MALE, FEMALE, PREFER_NOT_TO_SAY]
+    MaritalStatus:
+      type: string
+      enum: [SINGLE, MARRIED, DIVORCED, WIDOWED, PREFER_NOT_TO_SAY]
+    MembershipStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+    ChurchRole:
+      type: string
+      enum: [MEMBER, ADMIN, SUPER_ADMIN]
+    SubscriptionStatus:
+      type: string
+      enum: [ACTIVE, PAST_DUE, CANCELED, TRIALING]
+    ServiceTime:
+      type: object
+      required: [label, dayOfWeek, time]
+      properties:
+        label: { type: string, maxLength: 60 }
+        dayOfWeek:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0 = Sunday … 6 = Saturday.
+        time:
+          type: string
+          pattern: '^([01]\d|2[0-3]):[0-5]\d$'
+          example: '10:30'
+    CustomMinistry:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string, maxLength: 100 }
+        type: { type: string, enum: [MINISTRY, DEPARTMENT] }
+        description: { type: string, maxLength: 255 }
+        icon: { type: string }
+    OnboardingDraft:
+      type: object
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        churchName: { type: string }
+        denomination: { type: string }
+        congregationSize: { $ref: '#/components/schemas/CongregationSize' }
+        foundedYear: { type: integer, nullable: true }
+        country: { type: string }
+        city: { type: string }
+        address: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+        primaryLanguage: { $ref: '#/components/schemas/ChurchLanguage' }
+        timeZone: { type: string }
+        serviceTimes:
+          type: array
+          items: { $ref: '#/components/schemas/ServiceTime' }
+        logoUrl: { type: string }
+        ministryIds:
+          type: array
+          items: { type: string, format: uuid }
+        customMinistries:
+          type: array
+          items: { $ref: '#/components/schemas/CustomMinistry' }
+    MemberProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        profilePhotoUrl: { type: string, nullable: true }
+        fullName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        gender: { $ref: '#/components/schemas/Gender' }
+        phoneNumber: { type: string }
+        contactEmail: { type: string, format: email }
+        city: { type: string }
+        address: { type: string }
+        maritalStatus: { $ref: '#/components/schemas/MaritalStatus' }
+        occupation: { type: string, nullable: true }
+        completedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ChurchMembership:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        churchId: { type: string, format: uuid }
+        userId: { type: string, format: uuid }
+        role: { $ref: '#/components/schemas/ChurchRole' }
+        status: { $ref: '#/components/schemas/MembershipStatus' }
+        joinedAt: { type: string, format: date-time, nullable: true }
+        rejectionReason: { type: string, nullable: true }
+        user:
+          type: object
+          properties:
+            fullName: { type: string, nullable: true }
+            email: { type: string, format: email }
+            memberProfile: { $ref: '#/components/schemas/MemberProfile', nullable: true }
+    Transaction:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        reference: { type: string }
+        amount: { type: string }
+        status:
+          type: string
+          enum: [pending, success, failed]
+        authorizationUrl: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    PaystackWebhook:
+      type: object
+      properties:
+        event:
+          type: string
+          enum: [charge.success, charge.failed, subscription.create, subscription.disable, invoice.update, invoice.payment_failed]
+        data:
+          type: object
+          additionalProperties: true
+      required: [event, data]

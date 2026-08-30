@@ -12,7 +12,9 @@ declare global {
 
 const connectionString = `${env.DATABASE_URL}`;
 
-const adapter = new PrismaNeon({ connectionString });
+const schemaParam = new URL(connectionString).searchParams.get('schema');
+
+const adapter = new PrismaNeon({ connectionString }, schemaParam ? { schema: schemaParam } : undefined);
 const prisma = global.prisma || new PrismaClient({adapter});
 
 if(env.NODE_ENV === 'development') {

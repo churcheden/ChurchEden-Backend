@@ -16,15 +16,19 @@ const ADMIN_ROLES: ChurchRole[] = [ChurchRole.ADMIN, ChurchRole.SUPER_ADMIN];
 
 const MEMBERSHIP_INCLUDE = {
     user: {
-        select: { id: true, email: true, fullName: true },
-    },
-    memberProfile: {
         select: {
-            profilePhotoUrl: true,
+            id: true,
+            email: true,
             fullName: true,
-            contactEmail: true,
-            phoneNumber: true,
-            city: true,
+            memberProfile: {
+                select: {
+                    profilePhotoUrl: true,
+                    fullName: true,
+                    contactEmail: true,
+                    phoneNumber: true,
+                    city: true,
+                },
+            },
         },
     },
     church: {

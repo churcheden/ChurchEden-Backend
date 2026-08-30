@@ -102,7 +102,7 @@ class PaymentService {
 
     async verifyPayment (reference: string) {
         const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-            method: 'POST',
+            method: 'GET',
             headers: {
                 Authorization: `Bearer ${env.PAYSTACK_SECRET_KEY}`,
                 "Content-Type": 'application/json'

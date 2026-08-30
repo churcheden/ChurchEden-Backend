@@ -77,7 +77,7 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
         ? await uploadProfilePhoto(userId, req.file)
         : undefined;
 
-    const [, profile] = await prisma.$transaction([
+    const [profile] = await prisma.$transaction([
         prisma.memberProfile.upsert({
             where: { userId },
             create: {

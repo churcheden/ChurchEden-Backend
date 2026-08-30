@@ -5,7 +5,7 @@ import { prisma } from './prisma.js';
 import { env } from '../env.js';
 import { hashPassword } from '../utils/password.js';
 
-passport.use(new GoogleStrategy({
+export const googleStrategy = new GoogleStrategy({
     clientID: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
     callbackURL: env.GOOGLE_CALLBACK_URL,
@@ -62,6 +62,8 @@ passport.use(new GoogleStrategy({
     }catch(error) {
         done(error as Error, undefined);
     }
-}));
+});
+
+passport.use(googleStrategy);
 
 export { passport };
