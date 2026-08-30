@@ -77,39 +77,40 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
         ? await uploadProfilePhoto(userId, req.file)
         : undefined;
 
-    const profile = await prisma.memberProfile.upsert({
-        where: { userId },
-        create: {
-            userId,
-            fullName: data.fullName,
-            dateOfBirth: data.dateOfBirth,
-            gender: data.gender,
-            phoneNumber: normalizedPhone,
-            contactEmail: data.contactEmail,
-            city: data.city,
-            address: data.address,
-            maritalStatus: data.maritalStatus,
-            occupation: data.occupation ?? null,
-            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
-        },
-        update: {
-            fullName: data.fullName,
-            dateOfBirth: data.dateOfBirth,
-            gender: data.gender,
-            phoneNumber: normalizedPhone,
-            contactEmail: data.contactEmail,
-            city: data.city,
-            address: data.address,
-            maritalStatus: data.maritalStatus,
-            occupation: data.occupation ?? null,
-            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
-        },
-    });
-
-    await prisma.user.update({
-        where: { id: userId },
-        data: { fullName: data.fullName },
-    });
+    const [, profile] = await prisma.$transaction([
+        prisma.memberProfile.upsert({
+            where: { userId },
+            create: {
+                userId,
+                fullName: data.fullName,
+                dateOfBirth: data.dateOfBirth,
+                gender: data.gender,
+                phoneNumber: normalizedPhone,
+                contactEmail: data.contactEmail,
+                city: data.city,
+                address: data.address,
+                maritalStatus: data.maritalStatus,
+                occupation: data.occupation ?? null,
+                ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+            },
+            update: {
+                fullName: data.fullName,
+                dateOfBirth: data.dateOfBirth,
+                gender: data.gender,
+                phoneNumber: normalizedPhone,
+                contactEmail: data.contactEmail,
+                city: data.city,
+                address: data.address,
+                maritalStatus: data.maritalStatus,
+                occupation: data.occupation ?? null,
+                ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+            },
+        }),
+        prisma.user.update({
+            where: { id: userId },
+            data: { fullName: data.fullName },
+        }),
+    ]);
 
     await CacheService.delete(cacheKeys.userMe(userId));
 

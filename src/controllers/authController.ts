@@ -584,6 +584,16 @@ export const getCurrentUser = catchAsync(async(req: AuthenticatedRequest, res: R
                     lastLogin: true,
                     createdAt: true,
                     memberProfile: { select: { id: true } },
+                    churchMemberships: {
+                        select: {
+                            id: true,
+                            role: true,
+                            status: true,
+                            joinedAt: true,
+                            church: { select: { id: true, name: true, logoUrl: true } },
+                        },
+                        orderBy: { joinedAt: 'desc' },
+                    },
                 }
             });
 
@@ -593,11 +603,14 @@ export const getCurrentUser = catchAsync(async(req: AuthenticatedRequest, res: R
         };
         wideLogger.addCtx('cache_hit', false);
 
-        const { memberProfile, ...userData } = user;
+        const { memberProfile, churchMemberships, ...userData } = user;
 
         const result = {
             status: 'success',
-            user: userData,
+            user: {
+                ...userData,
+                memberships: churchMemberships,
+            },
             profileComplete: !!memberProfile,
         };
 

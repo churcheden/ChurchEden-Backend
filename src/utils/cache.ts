@@ -110,4 +110,5 @@ export const cacheKeys = {
     pendingRegistration: (email: string) => `pending-registration:${email}`,
     user: (userId: string) => `user:${userId}`,
     userMe: (userId: string) => `user:${userId}:me`,
+    churchOnboardingDraft: (userId: string) => `church-onboarding-draft:${userId}`,
 };

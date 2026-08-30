@@ -38,6 +38,26 @@ enum ChurchRole {
   SUPER_ADMIN
 }
 
+enum MembershipStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CongregationSize {
+  RANGE_1_100
+  RANGE_101_500
+  RANGE_501_1000
+  RANGE_1001_2000
+  RANGE_2000_PLUS
+}
+
+enum ChurchLanguage {
+  ENGLISH
+  FRENCH
+  SPANISH
+}
+
 model User {
   id       String  @id @default(uuid())
   email    String  @unique
@@ -60,9 +80,9 @@ model User {
   premiumExpiry DateTime?
 
   // processor-agnostic — was Paystack-specific
-  subscriptionProcessor String?            // e.g. "stripe" | "paypal" | "moolre"
-  subscriptionRef        String?           // that processor's subscription/customer id
-  subscriptionStatus     SubscriptionStatus?
+  subscriptionProcessor String? // e.g. "stripe" | "paypal" | "moolre"
+  subscriptionRef       String? // that processor's subscription/customer id
+  subscriptionStatus    SubscriptionStatus?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,9 +97,9 @@ model User {
 }
 
 model MemberProfile {
-  id              String        @id @default(uuid())
-  userId          String        @unique
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   profilePhotoUrl String? // R2 object URL, optional
   fullName        String // duplicates User.fullName intentionally — edited independently of the Google-sourced value
@@ -92,8 +112,8 @@ model MemberProfile {
   maritalStatus   MaritalStatus
   occupation      String?
 
-  completedAt     DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  completedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@map("MemberProfiles")
 }
@@ -120,31 +140,78 @@ model ChurchMembership {
   church   Church     @relation(fields: [churchId], references: [id], onDelete: Cascade)
   role     ChurchRole @default(MEMBER)
 
-  status   String    @default("PENDING") // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
-  joinedAt DateTime  @default(now())
+  status          MembershipStatus @default(PENDING) // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
+  rejectionReason String? // set when an admin rejects a join request
+  joinedAt        DateTime        @default(now()) // also serves as the join-request submission timestamp
 
   @@unique([userId, churchId]) // a user can't join the same church twice
-  @@index([churchId])
+  @@index([churchId, status]) // admin Join Requests list: requests for a church filtered by status
   @@map("ChurchMemberships")
 }
 
 model Church {
-  id   String @id @default(uuid())
-  name String
+  id               String           @id @default(uuid())
+  name             String
+  denomination     String // free text — accepts preset or custom value identically
+  congregationSize CongregationSize
+  foundedYear      Int?
 
-  memberships ChurchMembership[]
+  country         String
+  city            String
+  address         String
+  phone           String // E.164, e.g. +233241234567
+  email           String
+  primaryLanguage ChurchLanguage
+  timeZone        String // IANA tz string, e.g. "Africa/Accra"
+
+  logoUrl String? // R2 object URL
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships  ChurchMembership[]
+  serviceTimes ServiceTime[]
+  ministries   ChurchMinistry[]
 
   @@map("Churches")
 }
 
-model Transaction {
-  id String @id @default(uuid())
-  userId String
-  reference String @unique
-  amount Decimal
-  status String
-  authorizationUrl String
+model ServiceTime {
+  id        String   @id @default(uuid())
+  churchId  String
+  church    Church   @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  label     String // "Sunday Service", "Midweek Service"
+  dayOfWeek Int // 0 (Sunday) – 6 (Saturday)
+  time      String // "HH:MM" 24h format — timezone context comes from Church.timeZone
   createdAt DateTime @default(now())
+
+  @@index([churchId])
+  @@map("ServiceTimes")
+}
+
+model ChurchMinistry {
+  id          String  @id @default(uuid())
+  churchId    String
+  church      Church  @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  name        String
+  type        String // "MINISTRY" | "DEPARTMENT"
+  description String?
+  icon        String?
+  isCustom    Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  @@unique([churchId, name]) // case-sensitive uniqueness per church; case-insensitive enforced at the app layer
+  @@map("ChurchMinistries")
+}
+
+model Transaction {
+  id               String   @id @default(uuid())
+  userId           String
+  reference        String   @unique
+  amount           Decimal
+  status           String
+  authorizationUrl String
+  createdAt        DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
