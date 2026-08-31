@@ -287,12 +287,13 @@ export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Respons
         });
     }
 
-    const banReason = input.banReason.trim();
+    const banReason = input.banReason?.trim() || null;
 
     const updated = await prisma.churchMembership.update({
         where: { id: membership.id },
         data: {
             isBanned: true,
+            status: 'REJECTED',
             bannedAt: new Date(),
             banReason,
         },

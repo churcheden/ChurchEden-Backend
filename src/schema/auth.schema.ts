@@ -35,3 +35,8 @@ export const verifyEmailSchema = z.object({
 export const resendVerificationSchema = z.object({
     email: z.email("Invalid email address!"),
 });
+
+export const googleTokenSchema = z.object({
+    idToken: z.string().min(1, 'Google ID token is required.'),
+    platform: z.enum(['android', 'ios', 'web', 'expo']).default('web'),
+});

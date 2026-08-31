@@ -16,7 +16,7 @@ export const rejectJoinRequestSchema = z.object({
 
 export const banUserSchema = z.object({
     membershipId: z.uuid('Invalid membership id'),
-    banReason: z.string().trim().min(1, 'Ban reason is required.').max(500, 'Ban reason must be 500 characters or less.'),
+    banReason: z.string().trim().max(500, 'Ban reason must be 500 characters or less.').optional(),
 });
 
 export const unbanUserSchema = z.object({

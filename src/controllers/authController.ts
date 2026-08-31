@@ -8,6 +8,7 @@ import crypto from 'crypto';
 import { env } from "../env.js";
 import { emailService } from "../services/email.service.js";
 import { generateOTP } from "../utils/otp.js";
+import { verifyGoogleIdToken } from "../services/googleOAuth.service.js";
 import { wideLogger } from "../utils/wideLogger.js";
 import { catchAsync } from "../utils/catchAsync.js";
 import { AppError } from "../utils/AppError.js";
@@ -535,6 +536,112 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 
         setAuthCookies(res, accessToken, refreshToken);
         return res.redirect(`${frontendUrl}/auth/callback?profileComplete=${!!hasProfile}`);
+});
+
+// Exchange a Google ID token (from the mobile app) for ChurchEden tokens.
+// The app obtains the idToken via expo-auth-session using the platform-native
+// Google client; this endpoint verifies it and returns tokens the app stores
+// in SecureStore (the mobile app never relies on cookies).
+export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response) => {
+    wideLogger.addCtx('action', 'google_token_exchange');
+
+    const { idToken, platform } = req.body as { idToken: string; platform: 'android' | 'ios' | 'web' | 'expo' };
+
+    const clientIdForPlatform =
+        platform === 'android'
+            ? env.GOOGLE_ANDROID_CLIENT_ID
+            : platform === 'ios'
+              ? env.GOOGLE_IOS_CLIENT_ID
+              : env.GOOGLE_CLIENT_ID;
+
+    const allowedAudiences = [
+        env.GOOGLE_CLIENT_ID,
+        env.GOOGLE_ANDROID_CLIENT_ID,
+        env.GOOGLE_IOS_CLIENT_ID,
+    ].filter((id): id is string => Boolean(id));
+
+    if (allowedAudiences.length === 0) {
+        throw new AppError('Google OAuth is not configured.', 500, 'GOOGLE_NOT_CONFIGURED');
+    }
+
+    let payload;
+    try {
+        payload = await verifyGoogleIdToken(idToken, allowedAudiences);
+    } catch {
+        throw new AppError('Invalid Google token.', 401, 'INVALID_GOOGLE_TOKEN');
+    }
+
+    const email = payload.email?.trim().toLowerCase();
+    if (!email) {
+        throw new AppError('No email was returned by Google.', 400, 'GOOGLE_EMAIL_REQUIRED');
+    }
+    if (!payload.email_verified) {
+        throw new AppError('Your Google email has not been verified.', 403, 'GOOGLE_EMAIL_NOT_VERIFIED');
+    }
+
+    wideLogger.addCtx('google_id', payload.sub);
+
+    let user = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+
+    if (!user) {
+        user = await prisma.user.findUnique({ where: { email } });
+        if (user) {
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    loginProvider: 'GOOGLE',
+                    googleId: payload.sub,
+                    isVerified: true,
+                    ...(payload.name ? { fullName: user.fullName ?? payload.name } : {}),
+                },
+            });
+        }
+    }
+
+    if (!user) {
+        const randomPassword = crypto.randomBytes(32).toString('hex');
+        const hashedPassword = await hashPassword(randomPassword);
+
+        user = await prisma.user.create({
+            data: {
+                email,
+                password: hashedPassword,
+                googleId: payload.sub,
+                fullName: payload.name ?? null,
+                loginProvider: 'GOOGLE',
+                isVerified: true,
+            },
+        });
+    }
+
+    wideLogger.addCtx('user_id', user.id);
+
+    const { accessToken, refreshToken } = await issueAuthTokens({
+        id: user.id,
+        email: user.email,
+    });
+
+    const hasProfile = await prisma.memberProfile.findUnique({
+        where: { userId: user.id },
+    });
+
+    wideLogger.addCtx('google_auth_result', 'success');
+    wideLogger.addCtx('profile_complete', !!hasProfile);
+
+    return res.status(200).json({
+        status: 'success',
+        message: 'Signed in successfully.',
+        accessToken,
+        refreshToken,
+        profileComplete: !!hasProfile,
+        user: {
+            id: user.id,
+            email: user.email,
+            isVerified: user.isVerified,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+        },
+    });
 });
 
 // Logout

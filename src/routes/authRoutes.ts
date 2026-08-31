@@ -12,6 +12,7 @@ import {
     resetPassword,
     verifyEmail,
     getCurrentUser,
+    exchangeGoogleToken,
 } from "../controllers/authController.js";
 import {
     registerSchema,
@@ -21,6 +22,7 @@ import {
     resetPasswordSchema,
     verifyEmailSchema,
     resendVerificationSchema,
+    googleTokenSchema,
 } from '../schema/auth.schema.js';
 import { authenticateToken } from "../middleware/auth.middleware.js";
 import { authLimitter, passwordLimitter, resendVerificationLimitter } from "../middleware/rateLimiter.middleware.js";
@@ -42,6 +44,7 @@ router.post('/resend-verification', resendVerificationLimitter, validateBody(res
 
 // Google OAuth
 router.get('/google/url', getGoogleAuthUrl);
+router.post('/google/token', validateBody(googleTokenSchema), exchangeGoogleToken);
 router.get('/google', (req, res, next) => {
     const platform = (req.query.platform as string) || 'web';
     passport.authenticate('google', {

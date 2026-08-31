@@ -53,6 +53,10 @@ const envSchema = z.object({
 
     GOOGLE_CALLBACK_URL: z.string(),
 
+    GOOGLE_ANDROID_CLIENT_ID: z.string().optional(),
+
+    GOOGLE_IOS_CLIENT_ID: z.string().optional(),
+
     CLOUDFLARE_R2_ACCESS_KEY_ID: z.string(),
 
     CLOUDFLARE_R2_SECRET_ACCESS_KEY: z.string(),
