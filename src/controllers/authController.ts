@@ -9,6 +9,7 @@ import { env } from "../env.js";
 import { emailService } from "../services/email.service.js";
 import { generateOTP } from "../utils/otp.js";
 import { verifyGoogleIdToken } from "../services/googleOAuth.service.js";
+import { isAllowedMobileCallback, parseOAuthState } from "../utils/oauthState.js";
 import { wideLogger } from "../utils/wideLogger.js";
 import { catchAsync } from "../utils/catchAsync.js";
 import { AppError } from "../utils/AppError.js";
@@ -466,7 +467,12 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
 // Google OAuth — returns the URL the frontend should redirect the browser to
 export const getGoogleAuthUrl = catchAsync(async(req: Request, res: Response) => {
     const platform = (req.query.platform as string) || (req.headers['x-client-platform'] as string) || 'web';
-    const url = `${req.protocol}://${req.get('host')}/api/v1/auth/google?platform=${platform}`;
+    const redirect = typeof req.query.redirect === 'string' && isAllowedMobileCallback(req.query.redirect)
+        ? encodeURIComponent(req.query.redirect)
+        : '';
+    const url = `${req.protocol}://${req.get('host')}/api/v1/auth/google?platform=${encodeURIComponent(platform)}${
+        redirect ? `&redirect=${redirect}` : ''
+    }`;
 
     return res.status(200).json({
         status: 'success',
@@ -479,12 +485,12 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         wideLogger.addCtx('action', 'google_callback');
         const user = req.user;
         const frontendUrl = env.FRONTEND_URL;
-        const platform = (req.query.state as string) || (req.headers['x-client-platform'] as string) || 'web';
+        const { platform, redirect } = parseOAuthState((req.query.state as string) || '');
 
         if(!user) {
             wideLogger.addCtx('google_auth_result', 'no_user');
             if (platform === 'mobile') {
-                return res.redirect('churcheden://auth/callback?error=auth_failed');
+                return res.redirect(`${redirect || 'churcheden://auth/callback'}?error=auth_failed`);
             }
             return res.redirect(`${frontendUrl}/sign-in?error=auth_failed`);
         };
@@ -529,9 +535,10 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         wideLogger.addCtx('profile_complete', !!hasProfile);
 
         if (platform === 'mobile') {
-            return res.redirect(
-                `churcheden://auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}&profileComplete=${!!hasProfile}`
-            );
+            const callbackUri = redirect || 'churcheden://auth/callback';
+            const finalUrl = `${callbackUri}?accessToken=${encodeURIComponent(accessToken)}&refreshToken=${encodeURIComponent(refreshToken)}&profileComplete=${!!hasProfile}`;
+            wideLogger.addCtx('mobile_oauth_final_url', finalUrl);
+            return res.redirect(finalUrl);
         }
 
         setAuthCookies(res, accessToken, refreshToken);

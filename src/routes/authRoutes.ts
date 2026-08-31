@@ -1,5 +1,6 @@
 import { Router, type RequestHandler } from "express";
 import { validateBody } from "../middleware/validation.middleware.js";
+import { buildOAuthState, parseOAuthState } from "../utils/oauthState.js";
 import {
     forgotPassword,
     getGoogleAuthUrl,
@@ -47,17 +48,18 @@ router.get('/google/url', getGoogleAuthUrl);
 router.post('/google/token', validateBody(googleTokenSchema), exchangeGoogleToken);
 router.get('/google', (req, res, next) => {
     const platform = (req.query.platform as string) || 'web';
+    const redirect = typeof req.query.redirect === 'string' ? req.query.redirect : '';
     passport.authenticate('google', {
         scope: ['profile', 'email'],
         session: false,
-        state: platform,
+        state: buildOAuthState(platform, redirect),
     })(req, res, next);
 });
 router.get('/google/callback',
     (req, res, next) => {
-        const platform = (req.query.state as string) || 'web';
+        const { platform, redirect } = parseOAuthState((req.query.state as string) || '');
         const failureRedirect = platform === 'mobile'
-            ? 'churcheden://auth/callback?error=auth_failed'
+            ? `${redirect || 'churcheden://auth/callback'}?error=auth_failed`
             : `${env.FRONTEND_URL}/sign-in?error=auth_failed`;
 
         passport.authenticate('google', {
