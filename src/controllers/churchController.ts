@@ -6,6 +6,99 @@ import { wideLogger } from '../utils/wideLogger.js';
 import type { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { CacheService, cacheKeys } from '../utils/cache.js';
 
+// GET /api/v1/churches — public directory of registered churches, available to
+// any authenticated account. Optional ?q= searches by name/city/country/address.
+export const listChurches = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'list_churches');
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+
+    const churches = await prisma.church.findMany({
+        ...(q
+            ? {
+                  where: {
+                      OR: [
+                          { name: { contains: q, mode: 'insensitive' } },
+                          { city: { contains: q, mode: 'insensitive' } },
+                          { country: { contains: q, mode: 'insensitive' } },
+                          { address: { contains: q, mode: 'insensitive' } },
+                      ],
+                  },
+              }
+            : {}),
+        select: {
+            id: true,
+            name: true,
+            denomination: true,
+            country: true,
+            city: true,
+            address: true,
+            logoUrl: true,
+            createdAt: true,
+        },
+        orderBy: { name: 'asc' },
+    });
+
+    wideLogger.addCtx('list_churches_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        churches,
+    });
+});
+
+// POST /api/v1/churches/:churchId/leave
+// A member leaves an APPROVED church — their active membership is removed, and
+// they are free to apply to another church. Used by the mobile "change church"
+// flow. Guarded to MEMBER accounts only.
+export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'leave_church');
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    }
+
+    if (req.user?.accountType !== 'MEMBER') {
+        throw new AppError('Only church members can leave a church.', 403, 'FORBIDDEN');
+    }
+
+    const churchId = (req.params as { churchId?: string }).churchId;
+    if (!churchId) {
+        throw new AppError('Church id is required!', 400, 'MISSING_CHURCH_ID');
+    }
+
+    wideLogger.addCtx('user_id', userId);
+    wideLogger.addCtx('church_id', churchId);
+
+    const membership = await prisma.churchMembership.findUnique({
+        where: { userId_churchId: { userId, churchId } },
+        select: { id: true, status: true },
+    });
+
+    if (!membership) {
+        wideLogger.addCtx('leave_church', 'not_a_member');
+        throw new AppError('You are not a member of this church.', 404, 'NOT_A_MEMBER');
+    }
+
+    if (membership.status !== 'APPROVED') {
+        wideLogger.addCtx('leave_church', 'not_active');
+        throw new AppError(
+            'Only an active membership can be left.',
+            409,
+            'NOT_AN_ACTIVE_MEMBER',
+        );
+    }
+
+    await prisma.churchMembership.delete({ where: { id: membership.id } });
+
+    await CacheService.delete(cacheKeys.userMe(userId));
+
+    wideLogger.addCtx('leave_church_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        message: 'You have left the church successfully.',
+    });
+});
+
 // DELETE /api/v1/churches/:churchId
 // Guarded by requireSuperAdmin — only the church's SUPER_ADMIN can delete it.
 //

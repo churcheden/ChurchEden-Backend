@@ -2,9 +2,26 @@ import { Router, type RequestHandler } from 'express';
 import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { requireChurchRole, requireSuperAdmin } from '../middleware/churchRole.middleware.js';
 import { AppError } from '../utils/AppError.js';
-import { deleteChurch, getChurchAdmins } from '../controllers/churchController.js';
+import {
+    deleteChurch,
+    getChurchAdmins,
+    leaveChurch,
+    listChurches,
+} from '../controllers/churchController.js';
 
 const router = Router();
+
+// GET /api/v1/churches — public directory (any authenticated account).
+router.get('/',
+    authenticateToken as RequestHandler,
+    listChurches as RequestHandler,
+);
+
+// POST /api/v1/churches/:churchId/leave — member leaves an approved church.
+router.post('/:churchId/leave',
+    authenticateToken as RequestHandler,
+    leaveChurch as RequestHandler,
+);
 
 // Resolve the target church from the URL param for the SUPER_ADMIN guard.
 const resolveChurchFromParam = async (req: AuthenticatedRequest): Promise<string> => {

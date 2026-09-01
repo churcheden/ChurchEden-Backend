@@ -33,6 +33,32 @@ const CARD_BORDER = '#F0EBDD';
 const BODY_GRAY = '#5A564E';
 const MUTED_GRAY = '#9A948A';
 
+// Inline SVG icons (as data-URIs so they render reliably in Gmail/Outlook,
+// which don't support inline <svg> elements or emoji-driven styling).
+const svgDataUri = (body: string): string =>
+  `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${GOLD}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24">${body}</svg>`,
+  )}`;
+
+const ICON_PEOPLE = svgDataUri(
+  `<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>`,
+);
+const ICON_HEART = svgDataUri(
+  `<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>`,
+);
+const ICON_CALENDAR = svgDataUri(
+  `<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>`,
+);
+const ICON_CHART = svgDataUri(
+  `<line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>`,
+);
+const ICON_BOOK = svgDataUri(
+  `<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>`,
+);
+const ICON_MAIL = svgDataUri(
+  `<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>`,
+);
+
 export const welcomeEmailTemplate = ({
   firstName,
   fullName,
@@ -45,10 +71,10 @@ export const welcomeEmailTemplate = ({
   const year = new Date().getFullYear();
 
   const features = [
-    { label: 'Manage Members', icon: '👥' },
-    { label: 'Track Giving', icon: '🤝' },
-    { label: 'Plan Events', icon: '📅' },
-    { label: 'View Reports', icon: '📊' },
+    { label: 'Manage Members', icon: ICON_PEOPLE },
+    { label: 'Track Giving', icon: ICON_HEART },
+    { label: 'Plan Events', icon: ICON_CALENDAR },
+    { label: 'View Reports', icon: ICON_CHART },
   ];
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
@@ -137,7 +163,9 @@ export const welcomeEmailTemplate = ({
                         <td width="1" valign="top" style="padding-right:16px;">
                           <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                             <tr>
-                              <td style="width:44px;height:44px;background:#FBF2E2;border:1px solid #F0EBDD;border-radius:50%;text-align:center;vertical-align:middle;font-size:20px;line-height:44px;">📖</td>
+                              <td style="width:44px;height:44px;background:#FBF2E2;border:1px solid #F0EBDD;border-radius:50%;text-align:center;vertical-align:middle;">
+                                <img src="${ICON_BOOK}" alt="Scripture" width="20" height="20" style="display:inline-block;vertical-align:middle;" />
+                              </td>
                             </tr>
                           </table>
                         </td>
@@ -165,7 +193,9 @@ export const welcomeEmailTemplate = ({
                   <td class="feat" width="25%" align="center" valign="top" style="padding:8px 4px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                       <tr>
-                        <td style="width:56px;height:56px;background:${CARD_BG};border:1px solid ${CARD_BORDER};border-radius:16px;text-align:center;vertical-align:middle;font-size:24px;line-height:56px;">${f.icon}</td>
+                        <td style="width:56px;height:56px;background:${CARD_BG};border:1px solid ${CARD_BORDER};border-radius:16px;text-align:center;vertical-align:middle;">
+                          <img src="${f.icon}" alt="${f.label}" width="24" height="24" style="display:inline-block;vertical-align:middle;" />
+                        </td>
                       </tr>
                       <tr>
                         <td style="padding-top:12px;font-size:11px;font-weight:600;color:${BODY_GRAY};line-height:1.4;text-align:center;">${f.label}</td>
@@ -216,7 +246,9 @@ export const welcomeEmailTemplate = ({
                     <a href="#" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#F4EFE3;text-decoration:none;">IG</a>
                   </td>
                   <td style="padding:0 5px;">
-                    <a href="mailto:support@churcheden.app" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;font-family:'Inter',Arial,sans-serif;font-size:14px;font-weight:700;color:#F4EFE3;text-decoration:none;">✉</a>
+                    <a href="mailto:support@churcheden.app" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;text-decoration:none;">
+                      <img src="${ICON_MAIL}" alt="Email" width="15" height="15" style="display:inline-block;vertical-align:middle;" />
+                    </a>
                   </td>
                 </tr>
               </table>

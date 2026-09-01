@@ -23,6 +23,12 @@ export const unbanUserSchema = z.object({
     membershipId: z.uuid('Invalid membership id'),
 });
 
+// A member withdrawing their own PENDING join request so it stops showing on
+// the church admin dashboard before they apply to a different church.
+export const cancelJoinRequestSchema = z.object({
+    membershipId: z.uuid('Invalid membership id'),
+});
+
 export const joinRequestsQuerySchema = z.object({
     status: z.nativeEnum(MembershipStatus).optional(),
     churchId: z.uuid('Invalid church id').optional(),
@@ -33,3 +39,4 @@ export type ApproveJoinRequestInput = z.infer<typeof approveJoinRequestSchema>;
 export type RejectJoinRequestInput = z.infer<typeof rejectJoinRequestSchema>;
 export type BanUserInput = z.infer<typeof banUserSchema>;
 export type UnbanUserInput = z.infer<typeof unbanUserSchema>;
+export type CancelJoinRequestInput = z.infer<typeof cancelJoinRequestSchema>;

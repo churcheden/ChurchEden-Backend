@@ -17,7 +17,7 @@ export const authHeader = (token: string): { Authorization: string } => ({
 });
 
 export const accessTokenFor = async (userId: string, email: string): Promise<string> =>
-    generateAccessToken({ id: userId, email });
+    generateAccessToken({ id: userId, email, accountType: 'MEMBER' });
 
 /** An ADMIN JWT for the given Admin row id. id === adminId for admin tokens. */
 export const adminAccessTokenFor = async (adminId: string, email: string): Promise<string> =>

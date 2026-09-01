@@ -11,10 +11,12 @@ import {
     rejectJoinRequest,
     banUser,
     unbanUser,
+    cancelJoinRequest,
 } from '../controllers/joinRequestController.js';
 import {
     approveJoinRequestSchema,
     banUserSchema,
+    cancelJoinRequestSchema,
     joinRequestsQuerySchema,
     joinRequestSchema,
     rejectJoinRequestSchema,
@@ -48,6 +50,12 @@ router.get('/',
     authenticateToken as RequestHandler,
     validateQuery(joinRequestsQuerySchema),
     getJoinRequests as RequestHandler,
+);
+
+router.post('/cancel',
+    authenticateToken as RequestHandler,
+    validateBody(cancelJoinRequestSchema),
+    cancelJoinRequest as RequestHandler,
 );
 
 router.post('/approve',

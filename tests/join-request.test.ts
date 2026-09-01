@@ -596,4 +596,101 @@ describe('join-requests', () => {
             expect(res.body.code).toBe('BANNED_FROM_CHURCH');
         });
     });
+
+    describe('POST /api/v1/join-requests/cancel', () => {
+        it('200 — a member withdraws their pending request (row removed from dashboard)', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            const membershipId = submit.body.membership.id;
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/cancel')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId });
+
+            expect(res.status).toBe(200);
+            expect(res.body.status).toBe('success');
+            // Gone from the admin PENDING dashboard entirely.
+            expect(await prisma.churchMembership.findUnique({ where: { id: membershipId } })).toBeNull();
+        });
+
+        it('200 — after cancelling, the member can apply to a different church', async () => {
+            await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+
+            const otherSubmit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: churchOther.id })
+                .expect(201);
+
+            // Cancel the first (church) request, keep the new one (churchOther).
+            const toCancel = await prisma.churchMembership.findFirst({
+                where: { churchId: church.id },
+                select: { id: true },
+            });
+            expect(toCancel).not.toBeNull();
+            const cancel = await request(app)
+                .post('/api/v1/join-requests/cancel')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId: toCancel!.id });
+            expect(cancel.status).toBe(200);
+
+            expect(await prisma.churchMembership.count({ where: { churchId: church.id } })).toBe(0);
+            expect(otherSubmit.body.membership.status).toBe('PENDING');
+        });
+
+        it('403 — FORBIDDEN for a request owned by a different user', async () => {
+            const other = await registerAndVerify();
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/cancel')
+                .set(authHeader(other.accessToken))
+                .send({ membershipId: submit.body.membership.id });
+
+            expect(res.status).toBe(403);
+            expect(res.body.code).toBe('FORBIDDEN');
+        });
+
+        it('404 — REQUEST_NOT_FOUND for an unknown membership id', async () => {
+            const res = await request(app)
+                .post('/api/v1/join-requests/cancel')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId: '99999999-9999-4999-9999-999999999999' });
+            expect(res.status).toBe(404);
+            expect(res.body.code).toBe('REQUEST_NOT_FOUND');
+        });
+
+        it('409 — REQUEST_NOT_PENDING for an already-approved membership', async () => {
+            const submit = await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            await request(app)
+                .post('/api/v1/join-requests/approve')
+                .set(authHeader(admin.accessToken))
+                .send({ membershipId: submit.body.membership.id })
+                .expect(200);
+
+            const res = await request(app)
+                .post('/api/v1/join-requests/cancel')
+                .set(authHeader(applicant.accessToken))
+                .send({ membershipId: submit.body.membership.id });
+
+            expect(res.status).toBe(409);
+            expect(res.body.code).toBe('REQUEST_NOT_PENDING');
+        });
+    });
 });

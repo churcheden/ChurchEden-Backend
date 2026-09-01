@@ -9,6 +9,7 @@ import { CacheService, cacheKeys } from '../utils/cache.js';
 import type {
     ApproveJoinRequestInput,
     BanUserInput,
+    CancelJoinRequestInput,
     JoinRequestInput,
     RejectJoinRequestInput,
     UnbanUserInput,
@@ -122,6 +123,61 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
         status: 'success',
         message: 'Join request submitted successfully!',
         membership,
+    });
+});
+
+// POST /api/v1/join-requests/cancel
+// A member withdraws their own PENDING join request. Deleting the row removes
+// it from the church admin dashboard (which lists PENDING requests) so the
+// member can then apply to a different church without leaving a dangling entry.
+export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'cancel_join_request');
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    }
+
+    if (req.user?.accountType !== 'MEMBER') {
+        throw new AppError('Only church members can cancel join requests.', 403, 'FORBIDDEN');
+    }
+
+    wideLogger.addCtx('user_id', userId);
+
+    const { membershipId } = req.body as CancelJoinRequestInput;
+
+    const membership = await prisma.churchMembership.findUnique({
+        where: { id: membershipId },
+        select: { id: true, userId: true, status: true },
+    });
+
+    if (!membership) {
+        wideLogger.addCtx('cancel_join_request', 'request_not_found');
+        throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
+    }
+
+    if (membership.userId !== userId) {
+        wideLogger.addCtx('cancel_join_request', 'not_owner');
+        throw new AppError('You cannot cancel a join request you did not submit.', 403, 'FORBIDDEN');
+    }
+
+    if (membership.status !== 'PENDING') {
+        wideLogger.addCtx('cancel_join_request', 'not_pending');
+        throw new AppError(
+            'Only a pending join request can be cancelled.',
+            409,
+            'REQUEST_NOT_PENDING',
+        );
+    }
+
+    await prisma.churchMembership.delete({ where: { id: membership.id } });
+
+    await CacheService.delete(cacheKeys.userMe(userId));
+
+    wideLogger.addCtx('cancel_join_request_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        message: 'Join request cancelled successfully.',
     });
 });
 
