@@ -4,6 +4,7 @@ import { AppError } from '../utils/AppError.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import { wideLogger } from '../utils/wideLogger.js';
 import type { AuthenticatedRequest } from '../middleware/auth.middleware.js';
+import { normalizePhoneToE164 } from '../utils/phone.js';
 import type { ChurchRequestInput } from '../schema/church-request.schema.js';
 
 export const createChurchRequest = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
@@ -17,12 +18,22 @@ export const createChurchRequest = catchAsync(async (req: AuthenticatedRequest, 
     wideLogger.addCtx('user_id', userId);
     const data = req.body as ChurchRequestInput;
 
+    let phoneContact: string | null = null;
+    if (data.phoneContact) {
+        // Normalize to E.164 using the country code when provided, so local
+        // ("0544053900") and international ("+233 ...") formats are accepted.
+        phoneContact = normalizePhoneToE164(data.phoneContact, data.phoneCountryCode);
+        if (!phoneContact) {
+            throw new AppError('Invalid phone number.', 400, 'INVALID_PHONE');
+        }
+    }
+
     const churchRequest = await prisma.churchRequest.create({
         data: {
             churchName: data.churchName,
             city: data.city,
             leaderName: data.leaderName,
-            phoneContact: data.phoneContact || null,
+            phoneContact,
             emailContact: data.emailContact || null,
             requestedById: userId,
         },

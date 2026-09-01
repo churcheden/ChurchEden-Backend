@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
-import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import type { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { cloudflare } from '../config/cloudflare.js';
@@ -10,6 +9,7 @@ import { wideLogger } from '../utils/wideLogger.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import { AppError } from '../utils/AppError.js';
 import { CacheService, cacheKeys } from '../utils/cache.js';
+import { normalizePhoneToE164 } from '../utils/phone.js';
 import { completeProfileSchema } from '../schema/profile.schema.js';
 
 type CompleteProfileInput = ReturnType<typeof completeProfileSchema.parse>;
@@ -66,12 +66,11 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
         };
     }
 
-    const parsedPhone = parsePhoneNumberFromString(data.phoneNumber);
-    if(!parsedPhone || !parsedPhone.isValid()) {
+    const normalizedPhone = normalizePhoneToE164(data.phoneNumber, data.phoneCountryCode);
+    if (!normalizedPhone) {
         wideLogger.addCtx('complete_profile_result', 'invalid_phone');
         throw new AppError('Invalid phone number', 400, 'INVALID_PHONE');
-    };
-    const normalizedPhone = parsedPhone.format('E.164');
+    }
 
     const profilePhotoUrl = req.file
         ? await uploadProfilePhoto(userId, req.file)
