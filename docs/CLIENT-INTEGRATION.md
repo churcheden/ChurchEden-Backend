@@ -96,7 +96,7 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 
 | Endpoint | Notes |
 | --- | --- |
-| `POST /members/profile/complete` | multipart: `profilePhoto` (≤ 5 MB) + fields `fullName`, `dateOfBirth`, `gender`, `phoneNumber`, `contactEmail`, `city`, `address`, `maritalStatus`, `occupation?` |
+| `POST /members/profile/complete` | multipart: `profilePhoto` (≤ 5 MB) + fields `fullName`, `dateOfBirth`, `gender`, `phoneNumber`, `phoneCountryCode?`, `contactEmail`, `city`, `address`, `maritalStatus`, `occupation?` |
 | `GET /members/profile` | `404 PROFILE_NOT_FOUND` until completed |
 
 - One profile per user; re-submitting upserts it.
@@ -107,12 +107,26 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 
 ---
 
-## 5. Join-requests
+## 5. Churches (directory)
+
+| Endpoint | Notes |
+| --- | --- |
+| `GET /churches` | List the church directory; add `?q=<name or city>` to search. Returns `{ churches: [...] }` |
+| `GET /churches/:churchId/admins` | List a church's admins (`ADMIN`/`SUPER_ADMIN`) |
+| `POST /churches/:churchId/leave` | The member leaves an **approved** church (role `MEMBER`); no body |
+
+- `leave` and `join-requests/cancel` are how a member manages their own
+  membership/request without needing an admin role.
+
+---
+
+## 6. Join-requests
 
 | Endpoint | Notes |
 | --- | --- |
 | `POST /join-requests` `{ churchId }` | Create a `ChurchMembership` with status `PENDING` |
 | `GET /join-requests` | Own requests; admins add `?status=PENDING&churchId=` to list their church's pool; SUPER_ADMIN sees all churches |
+| `POST /join-requests/cancel` `{ membershipId }` | The member cancels their own **pending** request (role `MEMBER`) |
 | `POST /join-requests/approve` `{ membershipId }` | Requires `ADMIN`/`SUPER_ADMIN` of that church |
 | `POST /join-requests/reject` `{ membershipId, rejectionReason? }` | Same role requirement |
 | `POST /join-requests/ban` `{ membershipId, banReason? }` | Bans the user from that church (any further `POST /join-requests` → `403 BANNED_FROM_CHURCH`) |
@@ -128,7 +142,7 @@ notification (email/SMS). Populate the client UI from the list response.
 
 ---
 
-## 6. Payments (Paystack)
+## 7. Payments (Paystack)
 
 | Endpoint | Notes |
 | --- | --- |
@@ -148,7 +162,7 @@ notification (email/SMS). Populate the client UI from the list response.
 
 ---
 
-## 7. Conventions & errors
+## 8. Conventions & errors
 
 - Envelope on success: `{ status: "success", data? }` (a few endpoints return
   the resource at top level — see OpenAPI).
@@ -169,7 +183,7 @@ notification (email/SMS). Populate the client UI from the list response.
 
 ---
 
-## 8. Known gaps & things to verify
+## 9. Known gaps & things to verify
 
 1. **Mobile `x-client-platform` header — unused.** The backend never reads it
    and doesn't yet store `deviceInfo` on refresh; mobile must persist tokens

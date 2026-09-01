@@ -58,8 +58,17 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/profile/complete` | 🔒 | Multipart member profile: `profilePhoto?` (≤5MB) + `fullName, dateOfBirth, gender, phoneNumber, contactEmail, city, address, maritalStatus, occupation?`. |
+| POST | `/profile/complete` | 🔒 | Multipart member profile: `profilePhoto?` (≤5MB) + `fullName, dateOfBirth, gender, phoneNumber, phoneCountryCode?, contactEmail, city, address, maritalStatus, occupation?`. |
 | GET | `/profile` | 🔒 | Get the member's own profile. |
+
+### Churches — `{base}/churches`
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/` | 🔒 | List the church directory. Query param: `q` (search by name/city). Returns `{ churches: [...] }`. |
+| POST | `/:churchId/leave` | 🔒 | The authenticated member leaves an **approved** church. No body. |
+| GET | `/:churchId/admins` | 🔒 | List a church's admins. |
+| DELETE | `/:churchId` | | Delete a church (admin). |
 
 ### Join Requests — `{base}/join-requests`
 
@@ -67,6 +76,7 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 |---|---|---|---|
 | POST | `/` | 🔒 | Submit a join request. Body `{churchId}`. |
 | GET | `/` | 🔒 | List join requests. Query params: `status` (`PENDING\|APPROVED\|REJECTED`), `churchId` (uuid). |
+| POST | `/cancel` | 🔒 | The authenticated member cancels their **pending** join request. Body `{membershipId}`. |
 | POST | `/approve` | 🔒 | Approve. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN of the church. |
 | POST | `/reject` | 🔒 | Reject. Body `{membershipId, rejectionReason?}`. Requires ADMIN/SUPER_ADMIN of the church. |
 | POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason?}`. Requires ADMIN/SUPER_ADMIN. |

@@ -298,6 +298,7 @@
                 { "key": "dateOfBirth", "value": "1990-01-01" },
                 { "key": "gender", "value": "FEMALE" },
                 { "key": "phoneNumber", "value": "+2348021234567" },
+                { "key": "phoneCountryCode", "value": "NG" },
                 { "key": "contactEmail", "value": "jane@example.com" },
                 { "key": "city", "value": "Lagos" },
                 { "key": "address", "value": "1 Test Street" },
@@ -314,6 +315,37 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{baseUrl}}/members/profile", "host": ["{{baseUrl}}"], "path": ["members", "profile"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Churches",
+      "item": [
+        {
+          "name": "List churches",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "url": { "raw": "{{baseUrl}}/churches", "host": ["{{baseUrl}}"], "path": ["churches"] }
+          }
+        },
+        {
+          "name": "Search churches",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Search the church directory by name/city via the q query param.",
+            "url": { "raw": "{{baseUrl}}/churches?q=Accra", "host": ["{{baseUrl}}"], "path": ["churches"], "query": [{ "key": "q", "value": "Accra" }] }
+          }
+        },
+        {
+          "name": "Leave church (approved membership)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "The authenticated member leaves an APPROVED church. Set the {{churchId}} variable.",
+            "url": { "raw": "{{baseUrl}}/churches/{{churchId}}/leave", "host": ["{{baseUrl}}"], "path": ["churches", "{{churchId}}", "leave"] }
           }
         }
       ]
@@ -351,6 +383,18 @@
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "url": { "raw": "{{baseUrl}}/join-requests", "host": ["{{baseUrl}}"], "path": ["join-requests"] }
+          }
+        },
+        {
+          "name": "Cancel (member, pending only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"membershipId\": \"{{membershipId}}\"\n}" },
+            "url": { "raw": "{{baseUrl}}/join-requests/cancel", "host": ["{{baseUrl}}"], "path": ["join-requests", "cancel"] }
           }
         },
         {

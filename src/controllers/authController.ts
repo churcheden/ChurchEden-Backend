@@ -613,7 +613,7 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
             if (platform === 'mobile') {
                 return res.redirect(`${redirect || 'churcheden://auth/callback'}?error=auth_failed`);
             }
-            return res.redirect(`${frontendUrl}/sign-in?error=auth_failed`);
+            return res.redirect(`${frontendUrl}/onboarding/sign-in?error=auth_failed`);
         };
 
         // WEB google sign-in is admin-only. Resolve the Admin row for this
@@ -632,7 +632,7 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 
             if (!admin || !admin.isActive) {
                 wideLogger.addCtx('google_admin_result', 'not_an_admin');
-                return res.redirect(`${frontendUrl}/sign-in?error=not_an_admin`);
+                return res.redirect(`${frontendUrl}/onboarding/sign-in?error=not_an_admin`);
             }
 
             if (admin.googleId !== dbUser?.googleId) {

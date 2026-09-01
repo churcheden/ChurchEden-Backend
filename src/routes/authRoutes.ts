@@ -60,7 +60,7 @@ router.get('/google/callback',
         const { platform, redirect } = parseOAuthState((req.query.state as string) || '');
         const failureRedirect = platform === 'mobile'
             ? `${redirect || 'churcheden://auth/callback'}?error=auth_failed`
-            : `${env.FRONTEND_URL}/sign-in?error=auth_failed`;
+            : `${env.FRONTEND_URL}/onboarding/sign-in?error=auth_failed`;
 
         passport.authenticate('google', {
             session: false,
