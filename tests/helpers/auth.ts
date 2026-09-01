@@ -19,6 +19,10 @@ export const authHeader = (token: string): { Authorization: string } => ({
 export const accessTokenFor = async (userId: string, email: string): Promise<string> =>
     generateAccessToken({ id: userId, email });
 
+/** An ADMIN JWT for the given Admin row id. id === adminId for admin tokens. */
+export const adminAccessTokenFor = async (adminId: string, email: string): Promise<string> =>
+    generateAccessToken({ id: adminId, email, accountType: 'ADMIN', adminId });
+
 /** Returns the most recently captured verification OTP for an email. */
 export const extractLastOtp = (to: string): string => {
     const calls = emailServiceMock.sendVerificationOTPEmail.mock.calls as [string, string, string?][];
@@ -72,7 +76,10 @@ export const registerAndVerify = async (options: { email?: string; password?: st
 };
 
 export const login = async (email: string, password: string): Promise<TestUser> => {
-    const res = await request(app).post('/api/v1/auth/login').send({ email, password });
+    const res = await request(app)
+        .post('/api/v1/auth/login')
+        .set('x-client-platform', 'mobile')
+        .send({ email, password });
     if (res.status !== 200) {
         throw new Error(`login failed: ${res.status} ${JSON.stringify(res.body)}`);
     }

@@ -22,3 +22,6 @@ Thumbs.db
 *.tsbuildinfo
 
 /src/generated/prisma
+
+# Test credentials (seeds / membership split)
+test-users.md

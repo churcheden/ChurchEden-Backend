@@ -60,14 +60,36 @@ export const addMembership = async (options: {
     return { id: membership.id };
 };
 
-/** A church admin (SUPER_ADMIN + APPROVED) with valid credentials. */
-export const createAdmin = async (options: { churchId: string }): Promise<{
+/**
+ * A church admin (an Admin-table row linked to a User) with valid ADMIN
+ * credentials. One admin identity = one church (Admin.email and
+ * Admin.linkedUserId are both unique), so a church is passed per call.
+ */
+export const createAdmin = async (options: {
+    churchId: string;
+    role?: 'ADMIN' | 'SUPER_ADMIN';
+}): Promise<{
     id: string;
     email: string;
     accessToken: string;
 }> => {
     const user = await createUser();
-    await addMembership({ userId: user.id, churchId: options.churchId, role: 'SUPER_ADMIN', status: 'APPROVED' });
-    const { accessTokenFor } = await import('./auth.js');
-    return { id: user.id, email: user.email, accessToken: await accessTokenFor(user.id, user.email) };
+    const admin = await prisma.admin.create({
+        data: {
+            email: user.email,
+            fullName: null,
+            churchId: options.churchId,
+            role: options.role ?? 'SUPER_ADMIN',
+            isActive: true,
+            isVerified: true,
+            loginProvider: 'EMAIL',
+            linkedUserId: user.id,
+        },
+    });
+    const { adminAccessTokenFor } = await import('./auth.js');
+    return {
+        id: admin.id,
+        email: admin.email,
+        accessToken: await adminAccessTokenFor(admin.id, admin.email),
+    };
 };

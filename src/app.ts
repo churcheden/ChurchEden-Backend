@@ -10,6 +10,7 @@ import paymentRoutes from './routes/paymentRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import onboardingRoutes from './routes/onboardingRoutes.js';
 import joinRequestRoutes from './routes/joinRequestRoutes.js';
+import churchRoutes from './routes/churchRoutes.js';
 import { apiLimitter } from './middleware/rateLimiter.middleware.js';
 import './config/passport.js';
 import { env } from './env.js';
@@ -72,6 +73,7 @@ app.use('/api/v1/members', profileRoutes);
 app.use('/api/v1/onboarding/church', onboardingRoutes);
 app.use('/api/v1/church-requests', churchRequestRoutes);
 app.use('/api/v1/join-requests', joinRequestRoutes);
+app.use('/api/v1/churches', churchRoutes);
 
 app.all(/.*/, (req, _res, next) => {
     next(new AppError(`Cannot find ${req.originalUrl} on the server!`, 404, 'PageNotFound'));

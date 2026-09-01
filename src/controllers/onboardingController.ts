@@ -306,7 +306,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
 
     const fullName = `${draft.firstName} ${draft.lastName}`.trim();
 
-    const { church, membership } = await prisma.$transaction(async (tx) => {
+    const { church, membership, admin } = await prisma.$transaction(async (tx) => {
         const church = await tx.church.create({
             data: {
                 name: draft.churchName!,
@@ -352,8 +352,21 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             data: {
                 userId,
                 churchId: church.id,
-                role: 'SUPER_ADMIN',
+                role: 'MEMBER',
                 status: 'APPROVED',
+            },
+        });
+
+        // The founding user becomes the church's SUPER_ADMIN via a dedicated
+        // Admin row, linked back to their member User. Their member history
+        // stays untouched — the Admin is a separate login identity.
+        const admin = await tx.admin.create({
+            data: {
+                email: req.user!.email,
+                fullName,
+                churchId: church.id,
+                role: 'SUPER_ADMIN',
+                linkedUserId: userId,
             },
         });
 
@@ -362,7 +375,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             data: { fullName },
         });
 
-        return { church, membership };
+        return { church, membership, admin };
     });
 
     await CacheService.delete(key);
@@ -374,5 +387,6 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
         message: 'Church created successfully!',
         church,
         membership,
+        admin,
     });
 });

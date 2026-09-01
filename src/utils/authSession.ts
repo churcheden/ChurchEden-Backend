@@ -41,8 +41,8 @@ export const issueAuthTokens = async (
     deviceInfo?: string,
 ) => {
     const [accessToken, refreshToken] = await Promise.all([
-        generateAccessToken({ id: user.id, email: user.email }),
-        generateRefreshToken({ id: user.id, email: user.email }),
+        generateAccessToken({ id: user.id, email: user.email, accountType: 'MEMBER' }),
+        generateRefreshToken({ id: user.id, email: user.email, accountType: 'MEMBER' }),
     ]);
 
     // bcrypt truncates input at 72 bytes, and two refresh tokens for the same
@@ -68,6 +68,42 @@ export const issueAuthTokens = async (
     return { accessToken, refreshToken };
 };
 
+// Issue tokens for an Admin session. Admins authenticate and hold refresh
+// tokens in the AdminRefreshToken table, entirely separate from members'
+// RefreshToken rows, because they arrive through a different auth path.
+export interface AdminAuthTokensInput {
+    id: string; // Admin.id
+    adminId: string; // Admin.id (kept for clarity in the token payload)
+    email: string;
+}
+
+export const issueAdminAuthTokens = async (
+    admin: { id: string; adminId: string; email: string },
+    deviceInfo?: string,
+) => {
+    const [accessToken, refreshToken] = await Promise.all([
+        generateAccessToken({ id: admin.adminId, email: admin.email, accountType: 'ADMIN', adminId: admin.adminId }),
+        generateRefreshToken({ id: admin.adminId, email: admin.email, accountType: 'ADMIN', adminId: admin.adminId }),
+    ]);
+
+    const hashedRefreshToken = sha256(refreshToken);
+
+    await prisma.adminRefreshToken.create({
+        data: {
+            adminId: admin.adminId,
+            tokenHash: hashedRefreshToken,
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_MAX_AGE_MS),
+        },
+    });
+
+    await prisma.admin.update({
+        where: { id: admin.adminId },
+        data: { updatedAt: new Date() },
+    });
+
+    return { accessToken, refreshToken, accountType: 'ADMIN' as const };
+};
+
 export const findActiveRefreshToken = async (userId: string, hashedToken: string) => {
     return prisma.refreshToken.findFirst({
         where: {
@@ -89,6 +125,20 @@ export const revokeRefreshToken = async (id: string) => {
 export const revokeUserSession = async (userId: string) => {
     await prisma.refreshToken.updateMany({
         where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+    });
+};
+
+export const revokeAdminSession = async (adminId: string) => {
+    await prisma.adminRefreshToken.updateMany({
+        where: { adminId, revokedAt: null },
+        data: { revokedAt: new Date() },
+    });
+};
+
+export const revokeAdminRefreshToken = async (id: string) => {
+    await prisma.adminRefreshToken.updateMany({
+        where: { id, revokedAt: null },
         data: { revokedAt: new Date() },
     });
 };

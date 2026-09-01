@@ -92,6 +92,7 @@ model User {
   refreshTokens     RefreshToken[]
   churchMemberships ChurchMembership[]
   churchRequests    ChurchRequest[]
+  linkedAdmin       Admin?
 
   @@index([isPremium])
   @@map("Users")
@@ -133,6 +134,55 @@ model RefreshToken {
   @@map("RefreshTokens")
 }
 
+// Admin — the home for every church admin's login credentials, completely
+// separate from the User table that regular members use. A member who gets
+// promoted to admin receives a NEW Admin row that points back to their
+// original User via linkedUserId, leaving their member history untouched.
+model Admin {
+  id            String        @id @default(uuid())
+  email         String        @unique
+  password      String?
+  googleId      String?       @unique
+  loginProvider LoginProvider @default(EMAIL)
+  isVerified    Boolean       @default(false)
+  fullName      String?
+
+  churchId String
+  church   Church     @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  // NOTE: This role field is intentionally NOT restricted to ADMIN/SUPER_ADMIN
+  // at the schema level. Prisma enums cannot be subset-restricted per model —
+  // the same ChurchRole enum is shared with ChurchMembership (which still
+  // allows MEMBER). The "admin roles only" constraint is enforced in Zod
+  // validation / controller logic when an Admin row is created, not here.
+  role     ChurchRole
+
+  linkedUserId String? @unique
+  linkedUser   User?   @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  adminRefreshTokens  AdminRefreshToken[]
+  reviewedMemberships ChurchMembership[]
+
+  @@map("Admins")
+}
+
+model AdminRefreshToken {
+  id        String    @id @default(uuid())
+  adminId   String
+  admin     Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([adminId])
+  @@map("AdminRefreshTokens")
+}
+
 model ChurchMembership {
   id       String     @id @default(uuid())
   userId   String
@@ -143,12 +193,17 @@ model ChurchMembership {
 
   status          MembershipStatus @default(PENDING) // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
   rejectionReason String? // set when an admin rejects a join request
-  joinedAt        DateTime        @default(now()) // also serves as the join-request submission timestamp
+  joinedAt        DateTime         @default(now()) // also serves as the join-request submission timestamp
 
   // Manual admin ban: a user banned from a church can no longer submit join requests.
   isBanned  Boolean   @default(false)
   bannedAt  DateTime?
   banReason String?
+
+  // The admin who acted on this request (approved/rejected/banned) and when.
+  reviewedBy      String?
+  reviewedByAdmin Admin?    @relation(fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?
 
   @@unique([userId, churchId]) // a user can't join the same church twice
   @@index([churchId, status]) // admin Join Requests list: requests for a church filtered by status
@@ -179,6 +234,7 @@ model Church {
   memberships  ChurchMembership[]
   serviceTimes ServiceTime[]
   ministries   ChurchMinistry[]
+  admins       Admin[]
 
   @@map("Churches")
 }
@@ -228,15 +284,15 @@ model Transaction {
 }
 
 model ChurchRequest {
-  id           String   @id @default(uuid())
-  churchName   String
-  city         String
-  leaderName   String
-  phoneContact String?
-  emailContact String?
+  id            String   @id @default(uuid())
+  churchName    String
+  city          String
+  leaderName    String
+  phoneContact  String?
+  emailContact  String?
   requestedById String
-  requestedBy  User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
+  requestedBy   User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
 
   @@index([requestedById])
   @@map("ChurchRequests")

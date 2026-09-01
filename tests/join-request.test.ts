@@ -6,9 +6,10 @@ import { prisma } from '../src/config/prisma.js';
 import { cacheKeys, CacheService } from '../src/utils/cache.js';
 import { fakeRedis, resetFakes } from './helpers/fakes.js';
 import { authHeader, registerAndVerify } from './helpers/auth.js';
+import { createAdmin } from './helpers/seed.js';
 import { resetDatabase } from './helpers/db.js';
 
-const createChurch = async (name: string, adminUserId: string) => {
+const createChurch = async (name: string) => {
     const church = await prisma.church.create({
         data: {
             name,
@@ -23,19 +24,11 @@ const createChurch = async (name: string, adminUserId: string) => {
             timeZone: 'Africa/Lagos',
         },
     });
-    await prisma.churchMembership.create({
-        data: {
-            userId: adminUserId,
-            churchId: church.id,
-            role: 'SUPER_ADMIN',
-            status: 'APPROVED',
-        },
-    });
     return church;
 };
 
 describe('join-requests', () => {
-    let admin: Awaited<ReturnType<typeof registerAndVerify>>;
+    let admin: Awaited<ReturnType<typeof createAdmin>>;
     let applicant: Awaited<ReturnType<typeof registerAndVerify>>;
     let church: Awaited<ReturnType<typeof createChurch>>;
     let churchOther: Awaited<ReturnType<typeof createChurch>>;
@@ -43,10 +36,10 @@ describe('join-requests', () => {
     beforeEach(async () => {
         resetFakes();
         await resetDatabase();
-        admin = await registerAndVerify();
         applicant = await registerAndVerify();
-        church = await createChurch('Grace Assembly', admin.userId);
-        churchOther = await createChurch('Riverside', admin.userId);
+        church = await createChurch('Grace Assembly');
+        churchOther = await createChurch('Riverside');
+        admin = await createAdmin({ churchId: church.id });
     });
 
     describe('POST /api/v1/join-requests', () => {
@@ -183,25 +176,32 @@ describe('join-requests', () => {
             expect(res.body.requests[0].church.id).toBe(church.id);
         });
 
-        it('200 — filters by churchId and status', async () => {
-            const pendingInOther = await request(app)
+        it('200 — returns only the caller\'s administered church requests', async () => {
+            await request(app)
+                .post('/api/v1/join-requests')
+                .set(authHeader(applicant.accessToken))
+                .send({ churchId: church.id })
+                .expect(201);
+            // A request to a church this admin does not administer is out of scope.
+            await request(app)
                 .post('/api/v1/join-requests')
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: churchOther.id })
                 .expect(201);
 
-            const pendingOnly = await request(app)
-                .get(`/api/v1/join-requests?churchId=${church.id}&status=PENDING`)
-                .set(authHeader(admin.accessToken));
-            expect(pendingOnly.status).toBe(200);
-            expect(pendingOnly.body.requests).toHaveLength(0);
-            expect(pendingInOther.body.membership.church.name).toBe('Riverside');
-
             const all = await request(app)
                 .get(`/api/v1/join-requests?status=PENDING`)
                 .set(authHeader(admin.accessToken));
+            expect(all.status).toBe(200);
             expect(all.body.requests).toHaveLength(1);
-            expect(all.body.requests[0].church.id).toBe(churchOther.id);
+            expect(all.body.requests[0].church.id).toBe(church.id);
+
+            const filtered = await request(app)
+                .get(`/api/v1/join-requests?churchId=${church.id}&status=PENDING`)
+                .set(authHeader(admin.accessToken));
+            expect(filtered.status).toBe(200);
+            expect(filtered.body.requests).toHaveLength(1);
+            expect(filtered.body.requests[0].church.id).toBe(church.id);
         });
 
         it('200 — lists REJECTED requests with the stored reason', async () => {
@@ -225,9 +225,10 @@ describe('join-requests', () => {
         });
 
         it('403 — FORBIDDEN when the churchId is not administered by the caller', async () => {
+            const otherAdmin = await createAdmin({ churchId: churchOther.id });
             const res = await request(app)
-                .get(`/api/v1/join-requests?churchId=${churchOther.id}`)
-                .set(authHeader(applicant.accessToken));
+                .get(`/api/v1/join-requests?churchId=${church.id}`)
+                .set(authHeader(otherAdmin.accessToken));
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
@@ -323,15 +324,7 @@ describe('join-requests', () => {
         });
 
         it('403 — FORBIDDEN for an admin of a different church', async () => {
-            const otherAdmin = await registerAndVerify();
-            await prisma.churchMembership.create({
-                data: {
-                    userId: otherAdmin.userId,
-                    churchId: churchOther.id,
-                    role: 'SUPER_ADMIN',
-                    status: 'APPROVED',
-                },
-            });
+            const otherAdmin = await createAdmin({ churchId: churchOther.id });
             const submit = await request(app)
                 .post('/api/v1/join-requests')
                 .set(authHeader(applicant.accessToken))
@@ -462,26 +455,18 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(applicant.accessToken))
-                .send({ membershipId });
+                .send({ membershipId, banReason: 'Any reason' });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
 
         it('403 — FORBIDDEN for an admin of a different church', async () => {
-            const otherAdmin = await registerAndVerify();
-            await prisma.churchMembership.create({
-                data: {
-                    userId: otherAdmin.userId,
-                    churchId: churchOther.id,
-                    role: 'SUPER_ADMIN',
-                    status: 'APPROVED',
-                },
-            });
+            const otherAdmin = await createAdmin({ churchId: churchOther.id });
             const membershipId = await submitRequest();
             const res = await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(otherAdmin.accessToken))
-                .send({ membershipId });
+                .send({ membershipId, banReason: 'Any reason' });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
@@ -490,7 +475,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: '99999999-9999-4999-9999-999999999999' });
+                .send({ membershipId: '99999999-9999-4999-9999-999999999999', banReason: 'Any reason' });
             expect(res.status).toBe(404);
             expect(res.body.code).toBe('REQUEST_NOT_FOUND');
         });
@@ -500,13 +485,13 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId })
+                .send({ membershipId, banReason: 'First ban' })
                 .expect(200);
 
             const again = await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId });
+                .send({ membershipId, banReason: 'Second ban' });
             expect(again.status).toBe(200);
             expect(again.body.message).toMatch(/already banned/);
         });
@@ -563,7 +548,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId })
+                .send({ membershipId, banReason: 'Spam' })
                 .expect(200);
 
             const res = await request(app)
@@ -600,7 +585,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id })
+                .send({ membershipId: submit.body.membership.id, banReason: 'Spam' })
                 .expect(200);
 
             const res = await request(app)

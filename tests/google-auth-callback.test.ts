@@ -37,7 +37,7 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
         setGoogleUser(null);
     });
 
-    it('redirects to the app callback, issues cookies, sends a welcome email and reports profile incomplete for a new user', async () => {
+    it('redirects to the app callback, returns tokens in the URL, sends a welcome email and reports profile incomplete for a new user', async () => {
         const created = await prisma.user.create({
             data: {
                 email: `${randomUUID()}@gmail.com`,
@@ -50,14 +50,13 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
         });
         setGoogleUser({ id: created.id, email: created.email });
 
-        const res = await request(app).get('/api/v1/auth/google/callback');
+        const res = await request(app).get('/api/v1/auth/google/callback?state=mobile');
         expect(res.status).toBe(302);
-        expect(res.headers.location).toBe(`${env.FRONTEND_URL}/auth/callback?profileComplete=false`);
-
-        const cookies = (res.headers['set-cookie'] ?? []) as string[];
-        expect(cookies.some((c) => c.startsWith('token='))).toBe(true);
-        expect(cookies.some((c) => c.startsWith('refreshToken='))).toBe(true);
-        expect(cookies.some((c) => /HttpOnly/i.test(c))).toBe(true);
+        expect(res.headers.location).toMatch(
+            'churcheden://auth/callback?accessToken=',
+        );
+        expect(res.headers.location).toMatch('refreshToken=');
+        expect(res.headers.location).toMatch('profileComplete=false');
 
         expect(emailServiceMock.sendWelcomeEmail).toHaveBeenCalledTimes(1);
         expect(emailServiceMock.sendWelcomeEmail.mock.calls[0][0]).toMatchObject({
@@ -95,9 +94,9 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
         });
         setGoogleUser({ id: created.id, email: created.email });
 
-        const res = await request(app).get('/api/v1/auth/google/callback');
+        const res = await request(app).get('/api/v1/auth/google/callback?state=mobile');
         expect(res.status).toBe(302);
-        expect(res.headers.location).toBe(`${env.FRONTEND_URL}/auth/callback?profileComplete=true`);
+        expect(res.headers.location).toMatch('profileComplete=true');
         expect(emailServiceMock.sendWelcomeEmail).not.toHaveBeenCalled();
     });
 

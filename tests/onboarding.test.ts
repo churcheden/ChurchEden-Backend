@@ -347,8 +347,12 @@ describe('onboarding', () => {
             expect(res.status).toBe(200);
             expect(res.body.status).toBe('success');
             expect(res.body.church.name).toBe('Grace Assembly');
-            expect(res.body.membership.role).toBe('SUPER_ADMIN');
+            // The founder is a MEMBER membership; admin privileges live in a
+            // dedicated SUPER_ADMIN Admin row.
+            expect(res.body.membership.role).toBe('MEMBER');
             expect(res.body.membership.status).toBe('APPROVED');
+            expect(res.body.admin.role).toBe('SUPER_ADMIN');
+            expect(res.body.admin.churchId).toBe(res.body.church.id);
 
             const church = await prisma.church.findFirst({ where: { name: 'Grace Assembly' } });
             expect(church?.denomination).toBe('Pentecostal');

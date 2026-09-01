@@ -16,6 +16,16 @@ import type {
 
 const ADMIN_ROLES: ChurchRole[] = [ChurchRole.ADMIN, ChurchRole.SUPER_ADMIN];
 
+// The churches the authenticated account administers — now sourced from the
+// Admin table, since admin privileges no longer live on ChurchMembership.
+const getManagedChurchIds = async (adminId: string): Promise<string[]> => {
+    const admins = await prisma.admin.findMany({
+        where: { id: adminId, isActive: true },
+        select: { churchId: true },
+    });
+    return admins.map((a) => a.churchId);
+};
+
 const MEMBERSHIP_INCLUDE = {
     user: {
         select: {
@@ -120,25 +130,19 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 // an optional ?churchId= narrows the list to a single church they administer.
 export const getJoinRequests = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'get_join_requests');
-    const userId = req.user?.id;
-
-    if (!userId) {
-        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    if (req.user?.accountType !== 'ADMIN' || !req.user.id) {
+        throw new AppError('You need to be a church administrator to view join requests.', 403, 'FORBIDDEN');
     }
+    const adminId = req.user.id;
+    wideLogger.addCtx('admin_id', adminId);
 
-    wideLogger.addCtx('user_id', userId);
+    const managedIds = await getManagedChurchIds(adminId);
 
-    const managed = await prisma.churchMembership.findMany({
-        where: { userId, status: 'APPROVED', isBanned: false, role: { in: ADMIN_ROLES } },
-        select: { churchId: true },
-    });
-
-    if (managed.length === 0) {
+    if (managedIds.length === 0) {
         wideLogger.addCtx('get_join_requests', 'not_admin');
         throw new AppError('You need to be a church administrator to view join requests.', 403, 'FORBIDDEN');
     }
 
-    const managedIds = managed.map((membership) => membership.churchId);
     const query = req.query as { status?: MembershipStatus; churchId?: string };
 
     if (query.churchId && !managedIds.includes(query.churchId)) {
@@ -198,7 +202,7 @@ export const approveJoinRequest = catchAsync(async (req: AuthenticatedRequest, r
 
     const updated = await prisma.churchMembership.update({
         where: { id: membership.id },
-        data: { status: 'APPROVED', rejectionReason: null },
+        data: { status: 'APPROVED', rejectionReason: null, reviewedBy: userId, reviewedAt: new Date() },
         include: MEMBERSHIP_INCLUDE,
     });
 
@@ -240,7 +244,7 @@ export const rejectJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 
     const updated = await prisma.churchMembership.update({
         where: { id: membership.id },
-        data: { status: 'REJECTED', rejectionReason },
+        data: { status: 'REJECTED', rejectionReason, reviewedBy: userId, reviewedAt: new Date() },
         include: MEMBERSHIP_INCLUDE,
     });
 
@@ -296,6 +300,8 @@ export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Respons
             status: 'REJECTED',
             bannedAt: new Date(),
             banReason,
+            reviewedBy: userId,
+            reviewedAt: new Date(),
         },
         include: MEMBERSHIP_INCLUDE,
     });

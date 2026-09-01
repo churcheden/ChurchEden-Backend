@@ -1,3 +1,15 @@
+// ChurchEden brand logo asset.
+//
+// IMPORTANT — LOGO HOSTING FLAG:
+// The existing LOGO_URL below is a Figma/AIDA-generated Google-hosted link that
+// may expire and is NOT a permanent production asset. Per the brand-consistency
+// task, this MUST be replaced with a real, non-expiring ChurchEden-hosted asset
+// (Cloudflare R2 public URL — same place church logos and media are stored,
+// i.e. `${CLOUDFLARE_R2_PUBLIC_URL}/...`) before this email ships.
+// Until that asset is uploaded, this template intentionally reuses the current
+// LOGO_URL so the layout renders, but the trailing throwaway token must be
+// swapped for a stable R2 object key (e.g. brand/logo-ring.png). Do NOT ship
+// with a placeholder or a third-party logo in its place.
 const LOGO_URL =
   'https://lh3.googleusercontent.com/aida-public/AB6AXuCWT_ZTEySeWNVA1KX7lZkdYIw1uvtRMUWAz49R9zMxZAgL3qFr7JHc31pE_LSAVObnrjAY4Ez2GL6JQZ3CIvkXfakRc-cjacO-WEiPmXSHtb_TYFQVOKJWy9l6ffaxNN8_ySOtiLsqrS1Z4eNyh3ZPScC2WypcIK3Wm3W32HSVCz4_E-ygnwFydzLB6Ok4fu4nG6Q8XDsrn9MHFX_GoMrJVQrGOW5nigrfJcVb7FGEnYNnCFGrX3Y4f5d0GCX7LEB7KCDMWdtsVzV3';
 
@@ -10,6 +22,17 @@ export interface WelcomeEmailData {
   signInUrl: string;
 }
 
+// Gold gradient + solid accent tokens (do not introduce new brand colors).
+const GOLD_GRADIENT = 'linear-gradient(135deg, #C9A24A 0%, #B3862E 100%)';
+const GOLD = '#C29A3B';
+const NAVY_DARK = '#242019';
+const NAVY_DEEPER = '#1D1813';
+const CREAM = '#F5F4F0';
+const CARD_BG = '#FBF8F1';
+const CARD_BORDER = '#F0EBDD';
+const BODY_GRAY = '#5A564E';
+const MUTED_GRAY = '#9A948A';
+
 export const welcomeEmailTemplate = ({
   firstName,
   fullName,
@@ -20,6 +43,13 @@ export const welcomeEmailTemplate = ({
 }: WelcomeEmailData) => {
   const displayName = fullName ?? firstName;
   const year = new Date().getFullYear();
+
+  const features = [
+    { label: 'Manage Members', icon: '👥' },
+    { label: 'Track Giving', icon: '🤝' },
+    { label: 'Plan Events', icon: '📅' },
+    { label: 'View Reports', icon: '📊' },
+  ];
 
   return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en">
@@ -36,90 +66,86 @@ export const welcomeEmailTemplate = ({
     table td { border-collapse: collapse; }
     img { border: 0; outline: none; text-decoration: none; }
     a { text-decoration: none; }
-    body { min-width: 100%; margin: 0; padding: 0; background-color: #F5F4F0; }
+    body { min-width: 100%; margin: 0; padding: 0; background-color: ${CREAM}; }
     @media only screen and (max-width: 520px) {
       .pad { padding: 0 20px !important; }
       .inner { padding: 32px 24px !important; }
-      .feat { display: block !important; width: 100% !important; padding: 6px 0 !important; }
+      .feat { display: block !important; width: 100% !important; padding: 8px 0 !important; }
     }
   </style>
 </head>
-<body style="margin:0;padding:0;background-color:#F5F4F0;font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F5F4F0;">
+<body style="margin:0;padding:0;background-color:${CREAM};font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${CREAM};">
     <tr>
-      <td align="center" style="padding:40px 16px;">
+      <td align="center" class="pad" style="padding:28px 16px 0;">
 
-        <!-- Wordmark -->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="padding-bottom:24px;">
+        <!-- 1. Top wordmark bar -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:650px;padding-bottom:24px;">
           <tr>
-            <td align="center">
-              <span style="font-family:'Fraunces',Georgia,serif;font-size:24px;font-weight:700;color:#242019;letter-spacing:-0.4px;">Church<span style="color:#C29A3B;">Eden</span></span>
+            <td align="left" valign="middle">
+              <img src="${LOGO_URL}" alt="ChurchEden Logo" width="26" height="26" style="display:inline-block;vertical-align:middle;border-radius:50%;margin-right:8px;" />
+              <span style="font-family:'Fraunces',Georgia,serif;font-size:20px;font-weight:700;color:${NAVY_DARK};letter-spacing:-0.4px;vertical-align:middle;">Church<span style="color:${GOLD};">Eden</span></span>
+            </td>
+            <td align="right" valign="middle">
+              <span style="font-family:'Inter',Arial,sans-serif;font-size:11px;font-weight:600;color:${MUTED_GRAY};letter-spacing:0.12em;text-transform:uppercase;">Welcome to ChurchEden</span>
             </td>
           </tr>
         </table>
 
+        <!-- Main card -->
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:650px;background-color:#ffffff;border:1px solid #ECE9E2;border-radius:18px;overflow:hidden;box-shadow:0 12px 34px -18px rgba(36,32,25,0.28);">
 
-          <!-- Header -->
+          <!-- 2. Hero header block (dark gradient) -->
           <tr>
-            <td style="background:linear-gradient(135deg,#2A241D 0%,#1D1813 100%);padding:40px 32px;text-align:center;border-bottom:1px solid #F0EDE6;">
-              <img src="${LOGO_URL}" alt="ChurchEden Logo" width="120" style="display:block;margin:0 auto 20px;height:auto;max-height:56px;" />
-              <h1 style="margin:0 0 14px;font-family:'Fraunces',Georgia,serif;font-size:30px;font-weight:700;color:#F4EFE3;line-height:1.2;letter-spacing:-0.5px;">
+            <td style="background:linear-gradient(135deg,#2A241D 0%,#1D1813 100%);padding:44px 32px 40px;text-align:center;border-bottom:1px solid #F0EDE6;">
+              <img src="${LOGO_URL}" alt="ChurchEden" width="72" height="72" style="display:block;margin:0 auto 22px;height:auto;border-radius:50%;" />
+              <h1 style="margin:0 0 12px;font-family:'Fraunces',Georgia,serif;font-size:30px;font-weight:700;color:#F4EFE3;line-height:1.2;letter-spacing:-0.5px;">
                 Welcome to ChurchEden
               </h1>
+              <p style="margin:0 0 22px;font-family:'Inter',Arial,sans-serif;font-size:14px;color:#C9BFAC;line-height:1.5;">
+                We're so glad to have you with us!
+              </p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
-                <tr><td align="center" style="width:64px;height:4px;background:linear-gradient(90deg,#C9A24A,#B3862E);border-radius:999px;"></td></tr>
+                <tr><td align="center" style="width:64px;height:4px;background:${GOLD_GRADIENT};border-radius:999px;"></td></tr>
               </table>
             </td>
           </tr>
 
-          <!-- Welcome -->
+          <!-- 3. Greeting + intro body -->
           <tr>
-            <td class="inner" style="padding:44px 32px 0;text-align:center;">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 24px;">
-                <tr>
-                  <td style="background:#FBF8F1;border:1px solid #F0EBDD;border-radius:999px;padding:22px;font-size:40px;line-height:1;">✉️</td>
-                </tr>
-              </table>
-              <h2 style="margin:0 0 14px;font-family:'Fraunces',Georgia,serif;font-size:28px;font-weight:700;color:#242019;line-height:1.2;letter-spacing:-0.5px;">
-                Hello, <span style="color:#C29A3B;">${firstName}</span>
+            <td class="inner" style="padding:44px 32px 0;text-align:left;">
+              <h2 style="margin:0 0 16px;font-family:'Fraunces',Georgia,serif;font-size:26px;font-weight:700;color:${NAVY_DARK};line-height:1.2;letter-spacing:-0.4px;">
+                Hi <span style="color:${GOLD};">${firstName}</span>,
               </h2>
-              <p style="margin:0 auto;font-size:15px;line-height:1.75;color:#5A564E;max-width:440px;display:inline-block;">
-                We're excited to have you on board. Your account has been successfully created, and you can now access ChurchEden to manage your church's operations with ease.
+              <p style="margin:0 0 8px;font-size:15px;line-height:1.75;color:${BODY_GRAY};">
+                Welcome to ChurchEden! Your account is ready, and we're thrilled to walk alongside your church.
+              </p>
+              <p style="margin:0;font-size:15px;line-height:1.75;color:${BODY_GRAY};">
+                From member management and giving to attendance tracking and ministry teams, ChurchEden brings everything your church needs into one simple, secure place.
               </p>
             </td>
           </tr>
 
-          <!-- Account details -->
+          <!-- 4. Scripture quote block -->
           <tr>
             <td style="padding:32px 32px 4px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FBF8F1;border:1px solid #F0EBDD;border-radius:14px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${CARD_BG};border:1px solid ${CARD_BORDER};border-radius:14px;">
                 <tr>
-                  <td style="padding:22px 24px 6px;">
-                    <p style="margin:0;font-size:11px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#9A948A;">Your account details</p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding:14px 24px 22px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                  <td style="padding:22px 24px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td width="50%" valign="top" style="padding:0 8px 16px 0;">
-                          <p style="margin:0 0 4px;font-size:12px;color:#9A948A;">Name</p>
-                          <p style="margin:0;font-size:14px;font-weight:600;color:#2A241D;">${displayName}</p>
+                        <td width="1" valign="top" style="padding-right:16px;">
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+                            <tr>
+                              <td style="width:44px;height:44px;background:#FBF2E2;border:1px solid #F0EBDD;border-radius:50%;text-align:center;vertical-align:middle;font-size:20px;line-height:44px;">📖</td>
+                            </tr>
+                          </table>
                         </td>
-                        <td width="50%" valign="top" style="padding:0 0 16px 8px;">
-                          <p style="margin:0 0 4px;font-size:12px;color:#9A948A;">Role</p>
-                          <p style="margin:0;font-size:14px;font-weight:600;color:#2A241D;">${role}</p>
-                        </td>
-                      </tr>
-                      <tr>
-                        <td width="50%" valign="top" style="padding:0 8px 0 0;">
-                          <p style="margin:0 0 4px;font-size:12px;color:#9A948A;">Email</p>
-                          <p style="margin:0;font-size:14px;font-weight:600;color:#2A241D;word-break:break-all;">${email}</p>
-                        </td>
-                        <td width="50%" valign="top" style="padding:0 0 0 8px;">
-                          <p style="margin:0 0 4px;font-size:12px;color:#9A948A;">Church</p>
-                          <p style="margin:0;font-size:14px;font-weight:600;color:#2A241D;">${church}</p>
+                        <td valign="top">
+                          <p style="margin:0 0 8px;font-family:'Fraunces',Georgia,serif;font-size:16px;font-style:italic;line-height:1.65;color:${NAVY_DARK};">
+                            &ldquo;Whoever can be trusted with very little can also be trusted with much.&rdquo;
+                          </p>
+                          <p style="margin:0;font-size:12px;color:${MUTED_GRAY};">— Luke 16:10 (NIV)</p>
                         </td>
                       </tr>
                     </table>
@@ -129,38 +155,20 @@ export const welcomeEmailTemplate = ({
             </td>
           </tr>
 
-          <!-- CTA -->
-          <tr>
-            <td style="padding:28px 32px 8px;text-align:center;">
-              <p style="margin:0 0 22px;font-size:14px;color:#8A8478;line-height:1.6;">
-                To get started, simply sign in using your registered email and password.
-              </p>
-              <a href="${signInUrl}" style="display:inline-block;background:linear-gradient(135deg,#C9A24A 0%,#B3862E 100%);color:#241D12;font-size:15px;font-weight:700;text-decoration:none;padding:16px 42px;border-radius:12px;box-shadow:0 10px 24px -10px rgba(179,134,46,0.55);">
-                Sign In to ChurchEden →
-              </a>
-            </td>
-          </tr>
-
-          <!-- Features -->
+          <!-- 5. Four-icon feature grid -->
           <tr>
             <td style="padding:36px 32px 8px;">
-              <p style="margin:0 0 22px;text-align:center;font-family:'Fraunces',Georgia,serif;font-size:19px;font-weight:600;color:#242019;">With ChurchEden, you can easily manage</p>
+              <p style="margin:0 0 22px;text-align:center;font-family:'Fraunces',Georgia,serif;font-size:19px;font-weight:600;color:${NAVY_DARK};">Here's what you can do with ChurchEden</p>
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
-                  ${[
-                    'Members &amp; Departments',
-                    'Tithes &amp; Financials',
-                    'Events &amp; Services',
-                    'Communication',
-                    'Reports &amp; Analytics',
-                  ].map((label) => `
-                  <td class="feat" width="20%" align="center" valign="top" style="padding:8px 4px;">
+                  ${features.map((f) => `
+                  <td class="feat" width="25%" align="center" valign="top" style="padding:8px 4px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                       <tr>
-                        <td style="width:56px;height:56px;background:#FBF8F1;border:1px solid #F0EBDD;border-radius:16px;text-align:center;vertical-align:middle;font-size:24px;">⛪</td>
+                        <td style="width:56px;height:56px;background:${CARD_BG};border:1px solid ${CARD_BORDER};border-radius:16px;text-align:center;vertical-align:middle;font-size:24px;line-height:56px;">${f.icon}</td>
                       </tr>
                       <tr>
-                        <td style="padding-top:12px;font-size:11px;font-weight:600;color:#5A564E;line-height:1.4;text-align:center;">${label}</td>
+                        <td style="padding-top:12px;font-size:11px;font-weight:600;color:${BODY_GRAY};line-height:1.4;text-align:center;">${f.label}</td>
                       </tr>
                     </table>
                   </td>`).join('')}
@@ -169,47 +177,61 @@ export const welcomeEmailTemplate = ({
             </td>
           </tr>
 
-          <!-- Security notice -->
+          <!-- 6. CTA button -->
           <tr>
-            <td style="padding:20px 32px 8px;">
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FDF3F3;border:1px solid #F3D8D8;border-radius:12px;">
-                <tr>
-                  <td style="font-size:14px;line-height:1.5;color:#8A3B30;padding:18px 20px;">
-                    If you did not create this account, please contact your church administrator immediately.
-                  </td>
-                  <td align="right" style="white-space:nowrap;padding-right:20px;">
-                    <a href="mailto:support@churcheden.com" style="display:inline-block;background-color:#ffffff;border:1px solid #E7B9B4;color:#B5382A;font-size:13px;font-weight:700;text-decoration:none;padding:10px 20px;border-radius:9px;">Contact Support</a>
-                  </td>
-                </tr>
-              </table>
+            <td style="padding:28px 32px 8px;text-align:center;">
+              <a href="${signInUrl}" style="display:inline-block;background:${GOLD_GRADIENT};color:#241D12;font-family:'Inter',Arial,sans-serif;font-size:16px;font-weight:700;text-decoration:none;padding:17px 48px;border-radius:14px;box-shadow:0 10px 24px -10px rgba(179,134,46,0.55);">
+                Get Started
+              </a>
             </td>
           </tr>
 
           <!-- Closing -->
           <tr>
-            <td class="inner" style="padding:16px 32px 40px;text-align:center;">
+            <td class="inner" style="padding:24px 32px 40px;text-align:center;">
               <p style="margin:0;font-size:14px;color:#8A8478;max-width:380px;display:inline-block;line-height:1.7;">
-                Thank you for choosing ChurchEden — where church management meets simplicity. May God bless your ministry.
+                Thank you for being part of ChurchEden — where church management meets simplicity. May God bless your ministry.
               </p>
             </td>
           </tr>
 
         </table>
 
-        <!-- Footer -->
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:650px;padding-top:24px;">
+        <!-- 7. Dark footer -->
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:650px;margin-top:24px;background:linear-gradient(135deg,#2A241D 0%,#1D1813 100%);border-radius:18px;">
           <tr>
-            <td align="center" style="padding-bottom:8px;">
-              <p style="margin:0 0 6px;font-size:12px;color:#9A948A;line-height:1.6;">
-                Need help? <a href="mailto:support@churcheden.com" style="color:#C29A3B;text-decoration:none;">support@churcheden.com</a>
+            <td style="padding:32px 28px 26px;text-align:center;">
+              <img src="${LOGO_URL}" alt="ChurchEden" width="34" height="34" style="display:block;margin:0 auto 14px;border-radius:50%;" />
+              <p style="margin:0 0 18px;font-size:13px;line-height:1.7;color:#C9BFAC;max-width:400px;display:inline-block;">
+                Thank you for being part of ChurchEden. We're here to support your church's growth and impact.
               </p>
-              <p style="margin:0;font-size:12px;color:#A7A199;line-height:1.6;">0531758854 &nbsp;·&nbsp; 0544053099</p>
-            </td>
-          </tr>
-          <tr><td style="height:16px;font-size:1px;display:block;">&nbsp;</td></tr>
-          <tr>
-            <td align="center" style="border-top:1px solid #E7E3DB;padding-top:18px;">
-              <p style="margin:0;font-size:11px;color:#B4AEA4;">© ${year} ChurchEden · Stewarding your church, beautifully.</p>
+
+              <!-- Social icons -->
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 20px;">
+                <tr>
+                  <td style="padding:0 5px;">
+                    <a href="#" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;font-family:'Inter',Arial,sans-serif;font-size:14px;font-weight:700;color:#F4EFE3;text-decoration:none;">f</a>
+                  </td>
+                  <td style="padding:0 5px;">
+                    <a href="#" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;font-family:'Inter',Arial,sans-serif;font-size:13px;font-weight:700;color:#F4EFE3;text-decoration:none;">IG</a>
+                  </td>
+                  <td style="padding:0 5px;">
+                    <a href="mailto:support@churcheden.app" style="display:inline-block;width:34px;height:34px;background:rgba(245,244,240,0.12);border:1px solid rgba(245,244,240,0.2);border-radius:50%;text-align:center;line-height:34px;font-family:'Inter',Arial,sans-serif;font-size:14px;font-weight:700;color:#F4EFE3;text-decoration:none;">✉</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 4px;font-family:'Fraunces',Georgia,serif;font-size:13px;font-style:italic;color:#E4DCCB;">Grace &amp; Peace,</p>
+              <p style="margin:0 0 16px;font-family:'Fraunces',Georgia,serif;font-size:13px;font-weight:600;color:#F4EFE3;">The ChurchEden Team</p>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr><td align="center" style="border-top:1px solid rgba(245,244,240,0.14);padding-top:16px;">
+                  <p style="margin:0 0 6px;font-size:12px;color:#A7A199;line-height:1.6;">
+                    Need help? Reply to this email or contact us at <a href="mailto:support@churcheden.app" style="color:#C29A3B;text-decoration:none;">support@churcheden.app</a>
+                  </p>
+                  <p style="margin:0;font-size:11px;color:#B4AEA4;">© ${year} ChurchEden. All rights reserved.</p>
+                </td></tr>
+              </table>
             </td>
           </tr>
           <tr><td style="line-height:32px;font-size:1px;display:block;">&nbsp;</td></tr>
@@ -231,10 +253,23 @@ export const welcomeEmailText = ({
   signInUrl,
 }: WelcomeEmailData) => {
   const displayName = fullName ?? firstName;
+  const year = new Date().getFullYear();
 
   return `Welcome to ChurchEden, ${firstName}!
 
-Your account has been successfully created.
+We're so glad to have you with us. Your account has been successfully created.
+
+ChurchEden brings everything your church needs into one place — member management, giving and tithes, attendance tracking, events, and ministry teams — so you can focus on what matters most.
+
+Here's what you can do with ChurchEden:
+- Manage Members
+- Track Giving
+- Plan Events
+- View Reports
+
+"Whoever can be trusted with very little can also be trusted with much." — Luke 16:10 (NIV)
+
+Get started by signing in here: ${signInUrl}
 
 Account Details:
 - Name: ${displayName}
@@ -242,10 +277,10 @@ Account Details:
 - Email: ${email}
 - Church: ${church}
 
-Sign in here: ${signInUrl}
+Grace & Peace,
+The ChurchEden Team
 
-If you did not create this account, contact support@churcheden.com immediately.
+Need help? Reply to this email or contact us at support@churcheden.app
 
-Thank you for choosing ChurchEden.
-The ChurchEden Team`;
+© ${year} ChurchEden. All rights reserved.`;
 };

@@ -39,4 +39,7 @@ export const resendVerificationSchema = z.object({
 export const googleTokenSchema = z.object({
     idToken: z.string().min(1, 'Google ID token is required.'),
     platform: z.enum(['android', 'ios', 'web', 'expo']).default('web'),
+    // Which identity table to authenticate against. Defaults to MEMBER; pass
+    // 'ADMIN' when the mobile app is signing in an admin account.
+    accountType: z.enum(['ADMIN', 'MEMBER']).default('MEMBER'),
 });

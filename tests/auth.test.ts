@@ -223,6 +223,7 @@ describe('auth', () => {
             const { email, password } = await registerAndVerify();
             const res = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password });
 
             expect(res.status).toBe(200);
@@ -237,9 +238,11 @@ describe('auth', () => {
 
             const wrongPassword = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password: 'WrongPassword1!' });
             const unknownEmail = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email: `${randomUUID()}@test.com`, password: 'Whatever123!' });
 
             expect(wrongPassword.status).toBe(401);
@@ -262,6 +265,7 @@ describe('auth', () => {
 
             const res = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('EMAIL_NOT_VERIFIED');
@@ -281,6 +285,7 @@ describe('auth', () => {
 
             const res = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password: 'StrongPass123!' });
             expect(res.status).toBe(401);
             expect(res.body.code).toBe('UNAUTHORIZED');
@@ -312,6 +317,7 @@ describe('auth', () => {
             });
             const loginRes = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email: user.email, password: user.password });
             const cookie = cookieValue(
                 loginRes.headers['set-cookie'] as unknown as string[],
@@ -463,6 +469,7 @@ describe('auth', () => {
 
             const oldLoginFails = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password: 'StrongPass123!' });
             expect(oldLoginFails.status).toBe(401);
 
@@ -475,6 +482,7 @@ describe('auth', () => {
 
             const newLoginWorks = await request(app)
                 .post('/api/v1/auth/login')
+                .set('x-client-platform', 'mobile')
                 .send({ email, password: newPassword });
             expect(newLoginWorks.status).toBe(200);
         });

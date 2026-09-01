@@ -5,6 +5,12 @@ import { env } from '../env.js';
 export interface JwtPayload {
     id: string,
     email: string,
+    // Which experience/permission model this token belongs to.
+    accountType: 'ADMIN' | 'MEMBER',
+    // Present on ADMIN tokens: the Admin row id (id above is the Admin id for
+    // ADMIN tokens, the User id for MEMBER tokens). Kept explicit so consumers
+    // never conflate the two.
+    adminId?: string,
 };
 
 export const generateRefreshToken = (payload: JwtPayload) => {

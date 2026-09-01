@@ -16,7 +16,10 @@ import { AppError } from "../utils/AppError.js";
 import { CacheService, cacheKeys } from "../utils/cache.js";
 import {
     clearAuthCookies,
+    issueAdminAuthTokens,
     issueAuthTokens,
+    revokeAdminRefreshToken,
+    revokeAdminSession,
     revokeRefreshToken,
     revokeUserSession,
     setAuthCookies,
@@ -171,59 +174,117 @@ export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
 
 
 // Login User
-export const loginUser = catchAsync(async(req: Request, res: Response) => {
-        wideLogger.addCtx('action', 'user_login');
-        const { email, password } = req.body;
-        
-        wideLogger.addCtx('email', email);
+export const loginUser = catchAsync(async (req: Request, res: Response) => {
+    wideLogger.addCtx('action', 'user_login');
+    const { email, password } = req.body;
 
-        const user = await prisma.user.findUnique({
-            where: { email } 
-        });
+    wideLogger.addCtx('email', email);
 
-        if(!user) {
-            wideLogger.addCtx('login_fail_reason', 'user_not_found');
+    const platform = (req.headers['x-client-platform'] as string) || 'web';
+    const isWeb = platform === 'web';
+
+    // Account-type routing:
+    //  - WEB always authenticates against the Admin table only. Plain members
+    //    have no web login under this design.
+    //  - MOBILE tries Admin first, then falls back to User — an admin may also
+    //    want to authenticate on the mobile app.
+    let admin = await prisma.admin.findUnique({ where: { email } });
+    let user: { id: string; email: string; fullName: string | null; isVerified: boolean; loginProvider: string; password: string | null } | null = null;
+
+    if (!admin && !isWeb) {
+        user = await prisma.user.findUnique({ where: { email } });
+    } else if (admin && isWeb) {
+        // Ensure a deactivated admin can't log into the web dashboard.
+        if (!admin.isActive) {
+            wideLogger.addCtx('login_fail_reason', 'admin_deactivated');
+            throw new AppError('This admin account has been deactivated.', 403, 'ADMIN_DEACTIVATED');
+        }
+    }
+
+    if (!admin && !user) {
+        wideLogger.addCtx('login_fail_reason', 'not_found');
+        throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
+    }
+
+    if (admin) {
+        const valid = admin.password != null ? await comparePasswords(password, admin.password) : false;
+        if (!valid) {
+            wideLogger.addCtx('login_fail_reason', 'admin_invalid_password');
             throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
-        };
-
-        const isValidatedPassword =
-            user.password != null ? await comparePasswords(password, user.password) : false;
-
-        if(!isValidatedPassword) {
-            wideLogger.addCtx('user_id', user.id);
-            wideLogger.addCtx('login_fail_reason', 'invalid_password');
-            throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
-        };
-
-        if(!user.isVerified && user.loginProvider === 'EMAIL') {
-            wideLogger.addCtx('user_id', user.id);
-            wideLogger.addCtx('login_fail_reason', 'email_not_verified');
+        }
+        if (!admin.isVerified && admin.loginProvider === 'EMAIL') {
+            wideLogger.addCtx('login_fail_reason', 'admin_email_not_verified');
             throw new AppError('Please verify your email before signing in.', 403, 'EMAIL_NOT_VERIFIED');
-        };
+        }
 
-        wideLogger.addCtx('user_id', user.id);
+        wideLogger.addCtx('admin_id', admin.id);
 
-        const { accessToken, refreshToken } = await issueAuthTokens({
-            id: user.id,
-            email: user.email,
+        const { accessToken, refreshToken } = await issueAdminAuthTokens({
+            id: admin.id,
+            adminId: admin.id,
+            email: admin.email,
         });
 
         setAuthCookies(res, accessToken, refreshToken);
 
         wideLogger.addCtx('login_success', true);
+        wideLogger.addCtx('account_type', 'ADMIN');
         return res.status(200).json({
             status: 'success',
-            message: "Signed in successfully.",
+            message: 'Signed in successfully.',
             accessToken,
             refreshToken,
+            accountType: 'ADMIN',
+            user: {
+                id: admin.id,
+                adminId: admin.id,
+                email: admin.email,
+                fullName: admin.fullName,
+                isVerified: admin.isVerified,
+                loginProvider: admin.loginProvider,
+                isActive: admin.isActive,
+            },
+        });
+    }
+
+    // MEMBER fallback (mobile only)
+    if (user) {
+        const isValidatedPassword = user.password != null ? await comparePasswords(password, user.password) : false;
+        if (!isValidatedPassword) {
+            wideLogger.addCtx('user_id', user.id);
+            wideLogger.addCtx('login_fail_reason', 'invalid_password');
+            throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
+        }
+
+        if (!user.isVerified && user.loginProvider === 'EMAIL') {
+            wideLogger.addCtx('user_id', user.id);
+            wideLogger.addCtx('login_fail_reason', 'email_not_verified');
+            throw new AppError('Please verify your email before signing in.', 403, 'EMAIL_NOT_VERIFIED');
+        }
+
+        wideLogger.addCtx('user_id', user.id);
+        const { accessToken, refreshToken } = await issueAuthTokens({ id: user.id, email: user.email });
+        setAuthCookies(res, accessToken, refreshToken);
+
+        wideLogger.addCtx('login_success', true);
+        wideLogger.addCtx('account_type', 'MEMBER');
+        return res.status(200).json({
+            status: 'success',
+            message: 'Signed in successfully.',
+            accessToken,
+            refreshToken,
+            accountType: 'MEMBER',
             user: {
                 id: user.id,
                 email: user.email,
                 fullName: user.fullName,
                 isVerified: user.isVerified,
                 loginProvider: user.loginProvider,
-            }
+            },
         });
+    }
+
+    throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
 });
 
 // Forgot Password
@@ -409,6 +470,65 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         }
 
+        const accountType = payload.accountType === 'ADMIN' ? 'ADMIN' : 'MEMBER';
+
+        if (accountType === 'ADMIN') {
+            const admin = await prisma.admin.findUnique({
+                where: { id: payload.id },
+                select: { id: true, email: true, isActive: true },
+            });
+
+            if (!admin) {
+                wideLogger.addCtx('refresh_token_result', 'invalid_admin_or_expired');
+                throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
+            }
+            if (!admin.isActive) {
+                wideLogger.addCtx('refresh_token_result', 'admin_deactivated');
+                throw new AppError('This admin account has been deactivated.', 403, 'ADMIN_DEACTIVATED');
+            }
+
+            const storedTokens = await prisma.adminRefreshToken.findMany({
+                where: {
+                    adminId: admin.id,
+                    revokedAt: null,
+                    expiresAt: { gt: new Date() },
+                },
+            });
+
+            let matchedRecord: { id: string } | null = null;
+            const candidateHash = crypto.createHash('sha256').update(refreshTokenValue).digest('hex');
+            for (const record of storedTokens) {
+                if (resetTokenHashesMatch(candidateHash, record.tokenHash)) {
+                    matchedRecord = record;
+                    break;
+                }
+            }
+
+            if (!matchedRecord) {
+                wideLogger.addCtx('refresh_token_result', 'mismatch');
+                throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
+            }
+
+            wideLogger.addCtx('admin_id', admin.id);
+
+            const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
+                await issueAdminAuthTokens({
+                    id: admin.id,
+                    adminId: admin.id,
+                    email: admin.email,
+                });
+
+            await revokeAdminRefreshToken(matchedRecord.id);
+            setAuthCookies(res, newAccessToken, newRefreshToken);
+
+            wideLogger.addCtx('refresh_token_result', 'success');
+            return res.status(200).json({
+                status: 'success',
+                accountType: 'ADMIN',
+                data: { newAccessToken, newRefreshToken },
+            });
+        }
+
         const user = await prisma.user.findUnique({
             where: { id: payload.id },
             select: { id: true, email: true },
@@ -457,6 +577,7 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         wideLogger.addCtx('refresh_token_result', 'success');
         return res.status(200).json({
             status: 'success',
+            accountType: 'MEMBER',
             data: {
                 newAccessToken,
                 newRefreshToken
@@ -494,6 +615,49 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
             }
             return res.redirect(`${frontendUrl}/sign-in?error=auth_failed`);
         };
+
+        // WEB google sign-in is admin-only. Resolve the Admin row for this
+        // account (linked to the member User via linkedUserId, or by email)
+        // and issue an ADMIN session. Plain members have no web login.
+        if (platform === 'web') {
+            const dbUser = await prisma.user.findUnique({
+                where: { id: user.id },
+                select: { id: true, email: true, fullName: true, googleId: true },
+            });
+            const admin = await prisma.admin.findFirst({
+                where: {
+                    OR: [{ linkedUserId: user.id }, { email: user.email }],
+                },
+            });
+
+            if (!admin || !admin.isActive) {
+                wideLogger.addCtx('google_admin_result', 'not_an_admin');
+                return res.redirect(`${frontendUrl}/sign-in?error=not_an_admin`);
+            }
+
+            if (admin.googleId !== dbUser?.googleId) {
+                await prisma.admin.update({
+                    where: { id: admin.id },
+                    data: {
+                        googleId: dbUser?.googleId ?? null,
+                        loginProvider: 'GOOGLE',
+                        isVerified: true,
+                        fullName: admin.fullName ?? dbUser?.fullName ?? null,
+                    },
+                });
+            }
+
+            wideLogger.addCtx('admin_id', admin.id);
+            const { accessToken, refreshToken } = await issueAdminAuthTokens({
+                id: admin.id,
+                adminId: admin.id,
+                email: admin.email,
+            });
+
+            setAuthCookies(res, accessToken, refreshToken);
+            wideLogger.addCtx('google_admin_result', 'success');
+            return res.redirect(`${frontendUrl}/auth/callback`);
+        }
 
         wideLogger.addCtx('user_id', user.id);
         wideLogger.addCtx('email', user.email);
@@ -552,7 +716,7 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response) => {
     wideLogger.addCtx('action', 'google_token_exchange');
 
-    const { idToken, platform } = req.body as { idToken: string; platform: 'android' | 'ios' | 'web' | 'expo' };
+    const { idToken, platform, accountType = 'MEMBER' } = req.body as { idToken: string; platform: 'android' | 'ios' | 'web' | 'expo'; accountType?: 'ADMIN' | 'MEMBER' };
 
     const clientIdForPlatform =
         platform === 'android'
@@ -587,6 +751,51 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
     }
 
     wideLogger.addCtx('google_id', payload.sub);
+
+    // ADMIN-context exchange: authenticate against the Admin table. Unlike
+    // members, an admin Google sign-in never auto-creates an account — the
+    // Admin row must already exist (e.g. created during church onboarding).
+    if (accountType === 'ADMIN') {
+        let admin = await prisma.admin.findUnique({ where: { googleId: payload.sub } });
+        if (!admin) {
+            admin = await prisma.admin.findUnique({ where: { email } });
+        }
+        if (!admin || !admin.isActive) {
+            throw new AppError('No active admin account matches this Google account.', 401, 'ADMIN_NOT_FOUND');
+        }
+        if (admin.googleId !== payload.sub) {
+            admin = await prisma.admin.update({
+                where: { id: admin.id },
+                data: { googleId: payload.sub, loginProvider: 'GOOGLE', isVerified: true },
+            });
+        }
+        wideLogger.addCtx('admin_id', admin.id);
+
+        const { accessToken, refreshToken } = await issueAdminAuthTokens({
+            id: admin.id,
+            adminId: admin.id,
+            email: admin.email,
+        });
+
+        wideLogger.addCtx('google_admin_auth_result', 'success');
+        return res.status(200).json({
+            status: 'success',
+            message: 'Signed in successfully.',
+            accessToken,
+            refreshToken,
+            accountType: 'ADMIN',
+            user: {
+                id: admin.id,
+                adminId: admin.id,
+                email: admin.email,
+                fullName: admin.fullName,
+                isVerified: admin.isVerified,
+                loginProvider: admin.loginProvider,
+                isActive: admin.isActive,
+                role: admin.role,
+            },
+        });
+    }
 
     let user = await prisma.user.findUnique({ where: { googleId: payload.sub } });
 
@@ -655,40 +864,48 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
 export const logoutUser = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'user_logout');
 
-    let userId = req.user?.id;
+    let accountId = req.user?.id;
+    let accountType = req.user?.accountType === 'ADMIN' ? 'ADMIN' as const : 'MEMBER' as const;
 
-    if (!userId) {
+    if (!accountId) {
         // The logout route does not require auth middleware, so resolve the
-        // user from a present access token (header or cookie) first.
+        // account from a present access token (header or cookie) first.
         const accessToken = extractAccessToken(req);
         if (accessToken) {
             try {
                 const payload = await verifyAccessToken(accessToken);
-                userId = payload.id;
+                accountId = payload.id;
+                accountType = payload.accountType === 'ADMIN' ? 'ADMIN' : 'MEMBER';
             } catch {
                 wideLogger.addCtx('logout_result', 'invalid_access_token');
             }
         }
     }
 
-    if (!userId) {
+    if (!accountId) {
         const refreshTokenValue = getRefreshTokenFromRequest(req);
 
         if (refreshTokenValue) {
             try {
                 const payload = await verifyRefreshToken(refreshTokenValue);
-                userId = payload.id;
+                accountId = payload.id;
+                accountType = payload.accountType === 'ADMIN' ? 'ADMIN' : 'MEMBER';
             } catch {
                 wideLogger.addCtx('logout_result', 'invalid_refresh_token');
             }
         }
     }
 
-    if (userId) {
-        wideLogger.addCtx('user_id', userId);
-        await revokeUserSession(userId);
-        await CacheService.delete(cacheKeys.userMe(userId));
-        await CacheService.invalidatePattern(`user:${userId}:*`);
+    if (accountId) {
+        wideLogger.addCtx('user_id', accountId);
+        if (accountType === 'ADMIN') {
+            await revokeAdminSession(accountId);
+            await CacheService.delete(cacheKeys.userMe(`admin:${accountId}`));
+        } else {
+            await revokeUserSession(accountId);
+            await CacheService.delete(cacheKeys.userMe(accountId));
+            await CacheService.invalidatePattern(`user:${accountId}:*`);
+        }
     }
 
     clearAuthCookies(res);
@@ -700,69 +917,115 @@ export const logoutUser = catchAsync(async(req: AuthenticatedRequest, res: Respo
     });
 });
 
-export const getCurrentUser = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
-        wideLogger.addCtx('action', 'get_current_user');
-        
-        if (!req.user) {
-            wideLogger.addCtx('get_user_result', 'unauthorized');
-            throw new AppError('User not authenticated!', 401, 'UNAUTHORIZED');
-        };
+export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'get_current_user');
 
-        const userId = req.user.id;
-        wideLogger.addCtx('user_id', userId);
+    if (!req.user) {
+        wideLogger.addCtx('get_user_result', 'unauthorized');
+        throw new AppError('User not authenticated!', 401, 'UNAUTHORIZED');
+    }
 
-        // Try to get from cache first
-        const cacheKey = cacheKeys.userMe(userId);
+    const accountType = req.user.accountType === 'ADMIN' ? 'ADMIN' : 'MEMBER';
+    const id = req.user.id;
+    wideLogger.addCtx('user_id', id);
+    wideLogger.addCtx('account_type', accountType);
+
+    if (accountType === 'ADMIN') {
+        // Admin /me: return the Admin row + its church + linked member info.
+        const cacheKey = cacheKeys.userMe(`admin:${id}`);
         const cached = await CacheService.get(cacheKey);
         if (cached) {
             wideLogger.addCtx('cache_hit', true);
             return res.status(200).json(cached);
         }
 
-        const user = await prisma.user.findUnique({
-                where: { id: userId },
-                select: {
-                    id: true,
-                    email: true,
-                    fullName: true,
-                    isVerified: true,
-                    isPremium: true,
-                    premiumExpiry: true,
-                    loginProvider: true,
-                    lastLogin: true,
-                    createdAt: true,
-                    memberProfile: { select: { id: true } },
-                    churchMemberships: {
-                        select: {
-                            id: true,
-                            role: true,
-                            status: true,
-                            joinedAt: true,
-                            church: { select: { id: true, name: true, logoUrl: true } },
-                        },
-                        orderBy: { joinedAt: 'desc' },
-                    },
-                }
-            });
+        const admin = await prisma.admin.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                email: true,
+                fullName: true,
+                isVerified: true,
+                isActive: true,
+                role: true,
+                createdAt: true,
+                linkedUserId: true,
+                linkedUser: { select: { id: true, fullName: true } },
+                church: { select: { id: true, name: true, logoUrl: true, city: true } },
+            },
+        });
 
-        if (!user) {
-            wideLogger.addCtx('get_user_result', 'user_not_found');
-            throw new AppError('User not found!', 404, 'USER_NOT_FOUND');
-        };
-        wideLogger.addCtx('cache_hit', false);
-
-        const { memberProfile, churchMemberships, ...userData } = user;
+        if (!admin) {
+            wideLogger.addCtx('get_user_result', 'admin_not_found');
+            throw new AppError('Admin not found!', 404, 'ADMIN_NOT_FOUND');
+        }
 
         const result = {
             status: 'success',
-            user: {
-                ...userData,
-                memberships: churchMemberships,
-            },
-            profileComplete: !!memberProfile,
+            accountType: 'ADMIN',
+            user: admin,
+            profileComplete: false,
         };
 
         await CacheService.set(cacheKey, result, 600);
         wideLogger.addCtx('get_user_result', 'success');
         return res.status(200).json(result);
+    }
+
+    // MEMBER /me
+    const cacheKey = cacheKeys.userMe(id);
+    const cached = await CacheService.get(cacheKey);
+    if (cached) {
+        wideLogger.addCtx('cache_hit', true);
+        return res.status(200).json(cached);
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id },
+        select: {
+            id: true,
+            email: true,
+            fullName: true,
+            isVerified: true,
+            isPremium: true,
+            premiumExpiry: true,
+            loginProvider: true,
+            lastLogin: true,
+            createdAt: true,
+            memberProfile: { select: { id: true } },
+            churchMemberships: {
+                select: {
+                    id: true,
+                    role: true,
+                    status: true,
+                    isBanned: true,
+                    joinedAt: true,
+                    church: { select: { id: true, name: true, logoUrl: true } },
+                },
+                orderBy: { joinedAt: 'desc' },
+            },
+        },
+    });
+
+    if (!user) {
+        wideLogger.addCtx('get_user_result', 'user_not_found');
+        throw new AppError('User not found!', 404, 'USER_NOT_FOUND');
+    }
+    wideLogger.addCtx('cache_hit', false);
+
+    const { memberProfile, churchMemberships, ...userData } = user;
+
+    const result = {
+        status: 'success',
+        accountType: 'MEMBER',
+        user: {
+            ...userData,
+            memberships: churchMemberships,
+        },
+        profileComplete: !!memberProfile,
+    };
+
+    await CacheService.set(cacheKey, result, 600);
+    wideLogger.addCtx('get_user_result', 'success');
+    return res.status(200).json(result);
 });
