@@ -29,8 +29,12 @@ tags:
     description: Church founder onboarding (steps 1–4, draft, complete).
   - name: Members
     description: Member profile.
+  - name: Churches
+    description: Church directory, leave, admins, and church deletion.
+  - name: Church Requests
+    description: Submit a request to have a church onboarded.
   - name: Join Requests
-    description: Submit, list, approve and reject church join-requests.
+    description: Submit, list, approve, reject, ban and unban church join-requests.
   - name: Payments
     description: Paystack subscription initialize / verify / cancel and webhooks.
   - name: Health
@@ -87,8 +91,11 @@ paths:
       tags: [Auth]
       summary: Login, set JWT cookies
       description: >
-        On success the `token` and `refreshToken` HttpOnly cookies are set.
-        Unverified users receive a 401/EMAIL_NOT_VERIFIED-style error.
+        Authenticates against the `Admin` table on web (`x-client-platform: web`,
+        the default) and against `Admin` then `User` on mobile. On success the
+        JWT pair (`accessToken`, `refreshToken`) is returned in the body and the
+        `token`/`refreshToken` HttpOnly cookies are set. Unverified users receive
+        a 403/EMAIL_NOT_VERIFIED error.
       requestBody:
         required: true
         content:
@@ -101,14 +108,25 @@ paths:
                 password: { type: string }
       responses:
         '200':
-          description: Authenticated; JWT cookies set.
-          headers:
-            Set-Cookie:
-              schema: { type: string, description: token + refreshToken HttpOnly cookies }
+          description: Authenticated; token pair returned and JWT cookies set.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Signed in successfully. }
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  accountType: { type: string, enum: [ADMIN, MEMBER] }
+                  user: { type: object }
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Deactivated admin or unverified email.
+          $ref: '#/components/responses/Forbidden'
         '429':
           $ref: '#/components/responses/RateLimited'
 
@@ -129,6 +147,13 @@ paths:
       responses:
         '200':
           description: Logged out (idempotent).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: User logged out successfully! }
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -221,9 +246,22 @@ paths:
                 email: { type: string, format: email }
                 otp: { type: string, pattern: '^[0-9]{6}$' }
       responses:
-        '200': { description: Email verified. }
+        '200':
+          description: Email verified; user created and token pair returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Email verified successfully! }
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  user: { type: object }
         '400':
           $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /api/v1/auth/resend-verification:
     post:
@@ -262,6 +300,52 @@ paths:
                     type: string
                     example: http://localhost:8080/api/v1/auth/google
 
+  /api/v1/auth/google/token:
+    post:
+      tags: [Auth]
+      summary: Exchange a Google ID token for app tokens (mobile)
+      description: >
+        Verifies the Google ID token and authenticates an ADMIN (must already
+        exist and be active) or MEMBER (created on first sign-in) account.
+        Use this from native mobile apps instead of the browser redirect flow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string, description: Google ID token from Google Sign-In for Android/iOS/Web. }
+                platform:
+                  type: string
+                  enum: [android, ios, web, expo]
+                  default: web
+                accountType:
+                  type: string
+                  enum: [ADMIN, MEMBER]
+                  default: MEMBER
+                  description: Which identity table to authenticate against.
+      responses:
+        '200':
+          description: Authenticated; returns token pair and user payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Signed in successfully. }
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  accountType: { type: string, enum: [ADMIN, MEMBER] }
+                  profileComplete: { type: boolean }
+                  user: { type: object }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /api/v1/auth/google:
     get:
       tags: [Auth]
@@ -275,11 +359,13 @@ paths:
       tags: [Auth]
       summary: Google OAuth callback
       description: >
-        On success the JWT cookies are set and the browser is redirected to
-        `${FRONTEND_URL}/auth/callback?profileComplete=<true|false>`.
-        A new Google account gets a welcome email; existing email accounts are
-        linked and verified. On failure the browser is redirected to
-        `${FRONTEND_URL}/sign-in?error=auth_failed`.
+        On success the JWT cookies (web) are set and the browser is redirected to
+        `${FRONTEND_URL}/auth/callback?profileComplete=<true|false>`. Mobile
+        clients are redirected to `churcheden://auth/callback?...`. A new Google
+        account gets a welcome email; existing email accounts are linked and
+        verified. On failure the browser is redirected to
+        `${FRONTEND_URL}/onboarding/sign-in?error=auth_failed` (mobile:
+        `churcheden://auth/callback?error=auth_failed`).
       parameters:
         - in: query
           name: code
@@ -372,7 +458,7 @@ paths:
                 logo:
                   type: string
                   format: binary
-                  description: Max 2 MB.
+                  description: Max 5 MB (PNG/JPG/SVG).
                 serviceTimes:
                   type: string
                   description: JSON-encoded array of service time objects.
@@ -426,20 +512,18 @@ paths:
       tags: [Onboarding]
       security: [{ bearerAuth: [] }]
       summary: Read the in-progress onboarding draft
-      description: Raises DRAFT_NOT_FOUND (404) when no steps have been saved.
+      description: Returns `{}` when no steps have been saved yet.
       responses:
         '200':
-          description: Full draft.
+          description: Full draft (or empty object if none saved).
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  data:
+                  draft:
                     $ref: '#/components/schemas/OnboardingDraft'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -450,8 +534,8 @@ paths:
       summary: Create the church, admin membership and default ministries
       description: >
         Requires all four steps to be saved. Creates the Church, a SUPER_ADMIN
-        ChurchMembership for the caller, service times and ministries, then
-        clears the draft cache.
+        Admin row (linked to the caller) and an APPROVED MEMBER membership,
+        plus service times and ministries, then clears the draft cache.
       responses:
         '200':
           description: Church created.
@@ -461,10 +545,16 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  data:
+                  message: { type: string, example: Church created successfully! }
+                  church:
                     type: object
-                    properties:
-                      churchId: { type: string, format: uuid }
+                    description: The created Church record.
+                  membership:
+                    type: object
+                    description: The founding user's APPROVED MEMBER membership.
+                  admin:
+                    type: object
+                    description: The founding user's SUPER_ADMIN Admin row.
         '400':
           description: Onboarding incomplete or invalid inputs.
           content:
@@ -474,7 +564,7 @@ paths:
                 properties:
                   code:
                     type: string
-                    example: ONBOARDING_INCOMPLETE
+                    example: INCOMPLETE_ONBOARDING
                   message: { type: string }
         '404':
           $ref: '#/components/responses/NotFound'
@@ -563,7 +653,7 @@ paths:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
       summary: Submit a join-request for a church
-      description: Returns MEMBERSHIP_INCLUDE-style errors when already approved or pending.
+      description: Returns ALREADY_MEMBER / ALREADY_PENDING conflicts when already approved or pending.
       requestBody:
         required: true
         content:
@@ -575,53 +665,98 @@ paths:
                 churchId: { type: string, format: uuid }
       responses:
         '201':
-          description: Request created.
+          description: Request created (or 200 when re-applying after a rejection).
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
+                  message: { type: string, example: Join request submitted successfully! }
                   membership:
                     $ref: '#/components/schemas/ChurchMembership'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The caller is banned from the church (BANNED_FROM_CHURCH).
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /api/v1/join-requests:
     get:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: List join-requests
+      summary: List join-requests (admin only)
       description: >
-        Returns the caller's own requests. Admins may filter by `churchId` to list
-        pending memberships for their church (SUPER_ADMIN acts on all churches).
+        Requires an ADMIN account with at least one managed church. Returns
+        pending requests (or a given `status`) across all churches the caller
+        administers, or narrows to a single `churchId` the caller manages.
       parameters:
         - in: query
           name: status
           schema: { $ref: '#/components/schemas/MembershipStatus' }
-          description: Defaults to PENDING for admin listings.
+          description: Defaults to PENDING.
         - in: query
           name: churchId
           schema: { type: string, format: uuid }
       responses:
         '200':
-          description: Matching memberships with joined user + profile.
+          description: Matching requests with joined user + profile.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  memberships:
+                  requests:
                     type: array
                     items:
                       $ref: '#/components/schemas/ChurchMembership'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/join-requests/cancel:
+    post:
+      tags: [Join Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Cancel a pending join request (member)
+      description: >
+        Requires a MEMBER account and ownership of the request. Only PENDING
+        requests can be cancelled (409 REQUEST_NOT_PENDING otherwise).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [membershipId]
+              properties:
+                membershipId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Join request cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Join request cancelled successfully. }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
   /api/v1/join-requests/approve:
     post:
@@ -699,10 +834,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [membershipId]
+              required: [membershipId, banReason]
               properties:
                 membershipId: { type: string, format: uuid }
-                banReason: { type: string, maxLength: 500 }
+                banReason: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
           description: User banned.
@@ -750,6 +885,201 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /api/v1/church-requests:
+    post:
+      tags: [Church Requests]
+      security: [{ bearerAuth: [] }]
+      summary: Submit a request to onboard a church
+      description: >
+        Lets a member request that a church be onboarded onto the platform.
+        Exactly one of `phoneContact` or `emailContact` must be provided.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [churchName, city, leaderName]
+              properties:
+                churchName: { type: string, minLength: 1, maxLength: 150 }
+                city: { type: string, minLength: 1, maxLength: 100 }
+                leaderName: { type: string, minLength: 1, maxLength: 100 }
+                phoneContact: { type: string, maxLength: 20 }
+                phoneCountryCode:
+                  type: string
+                  minLength: 2
+                  maxLength: 2
+                  description: Uppercase ISO alpha-2 code used to normalize phone to E.164.
+                emailContact: { type: string, format: email, maxLength: 255 }
+      responses:
+        '201':
+          description: Church request submitted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Church request submitted successfully! }
+                  churchRequest: { type: object }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/churches:
+    get:
+      tags: [Churches]
+      security: [{ bearerAuth: [] }]
+      summary: List the church directory
+      description: >
+        Optional `?q=` searches by name, city, country or address
+        (case-insensitive contains match).
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Search churches by name/city/country/address.
+      responses:
+        '200':
+          description: Matching churches.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  churches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        name: { type: string }
+                        denomination: { type: string, nullable: true }
+                        country: { type: string }
+                        city: { type: string }
+                        address: { type: string, nullable: true }
+                        logoUrl: { type: string, nullable: true }
+                        createdAt: { type: string, format: date-time }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/churches/{churchId}/leave:
+    post:
+      tags: [Churches]
+      security: [{ bearerAuth: [] }]
+      summary: Leave an approved church (member)
+      description: >
+        Requires a MEMBER account. Deletes the member's APPROVED membership so
+        they can apply to another church. Returns 404 NOT_A_MEMBER if the caller
+        is not a member, and 409 NOT_AN_ACTIVE_MEMBER if the membership is not
+        APPROVED.
+      parameters:
+        - in: path
+          name: churchId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Membership removed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: You have left the church successfully. }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/churches/{churchId}/admins:
+    get:
+      tags: [Churches]
+      security: [{ bearerAuth: [] }]
+      summary: List a church's admins
+      description: Requires an ADMIN or SUPER_ADMIN role within the target church.
+      parameters:
+        - in: path
+          name: churchId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: The church's admins.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  admins:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        email: { type: string, format: email }
+                        fullName: { type: string, nullable: true }
+                        role: { $ref: '#/components/schemas/ChurchRole' }
+                        isActive: { type: boolean }
+                        loginProvider: { type: string }
+                        createdAt: { type: string, format: date-time }
+                        linkedUserId: { type: string, format: uuid, nullable: true }
+                        linkedUser:
+                          type: object
+                          nullable: true
+                          properties:
+                            id: { type: string, format: uuid }
+                            fullName: { type: string, nullable: true }
+                            email: { type: string }
+                            lastLogin: { type: string, format: date-time, nullable: true }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/churches/{churchId}:
+    delete:
+      tags: [Churches]
+      security: [{ bearerAuth: [] }]
+      summary: Delete a church
+      description: >
+        SUPER_ADMIN only. Deletes the church and cascades memberships, admins,
+        service times and ministries. Orphaned member Users (no remaining
+        memberships and not linked to an Admin) are also removed.
+      parameters:
+        - in: path
+          name: churchId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Church deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: success }
+                  message: { type: string, example: Church "Grace Chapel" deleted successfully. }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/v1/payments/initialize:
     get:
       tags: [Payments]
@@ -769,11 +1099,11 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: success }
+                  message: { type: string, example: Payment initialized successfully! }
                   data:
                     type: object
                     properties:
                       authorizationUrl: { type: string }
-                      reference: { type: string }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':

@@ -36,12 +36,13 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | POST | `/login` | | Sign in. Returns `accessToken`, `refreshToken`, `user`. |
 | GET | `/me` | 🔒 | Get the signed-in user + their church memberships. |
 | POST | `/refresh` | | Rotate tokens. Body `{refreshToken}` (**mobile/platform clients**) or HttpOnly cookie (**web**). Returns `data.newAccessToken`, `data.newRefreshToken`. |
-| POST | `/logout` | 🔒 | Revoke refresh tokens. |
+| POST | `/logout` | | Revoke refresh tokens. |
 | POST | `/forgot-password` | | Email a password-reset token. Body `{email}`. |
 | POST | `/reset-password` | | Set a new password. Body `{token, newPassword}`. |
 | GET | `/google/url` | | Returns `{ url }` to redirect the browser to Google OAuth. |
 | GET | `/google` | | Redirect to Google's consent screen (passport). |
 | GET | `/google/callback` | | OAuth callback — sets cookies and redirects to `FRONTEND_URL`. |
+| POST | `/google/token` | | Exchange a Google ID token (`{idToken, platform?, accountType?}`) for a token pair (mobile apps). |
 
 ### Onboarding — `{base}/onboarding/church`
 
@@ -52,7 +53,7 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | PATCH | `/step-3` | 🔒 | Multipart: `logo` (≤5MB) + `serviceTimes` JSON string (e.g. `[{"label":"Sunday Service","dayOfWeek":0,"time":"10:30"}]`). |
 | PATCH | `/step-4` | 🔒 | Ministries: `ministryIds[]` + `customMinistries[]`. |
 | GET | `/draft` | 🔒 | Resume a saved onboarding draft. |
-| POST | `/complete` | 🔒 | Finish onboarding. Returns `data.churchId`. |
+| POST | `/complete` | 🔒 | Finish onboarding. Returns the created `church`, `membership` and `admin`. |
 
 ### Members — `{base}/members`
 
@@ -67,19 +68,25 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 |---|---|---|---|
 | GET | `/` | 🔒 | List the church directory. Query param: `q` (search by name/city). Returns `{ churches: [...] }`. |
 | POST | `/:churchId/leave` | 🔒 | The authenticated member leaves an **approved** church. No body. |
-| GET | `/:churchId/admins` | 🔒 | List a church's admins. |
-| DELETE | `/:churchId` | | Delete a church (admin). |
+| GET | `/:churchId/admins` | 🔒 | List a church's admins. Requires ADMIN/SUPER_ADMIN of the church. |
+| DELETE | `/:churchId` | 🔒 | Delete a church (SUPER_ADMIN only). Cascades memberships, admins, service times and ministries. |
+
+### Church Requests — `{base}/church-requests`
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/` | 🔒 | Request that a church be onboarded. Body: `{churchName, city, leaderName}` plus exactly one of `phoneContact` (with optional `phoneCountryCode`) or `emailContact`. |
 
 ### Join Requests — `{base}/join-requests`
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | POST | `/` | 🔒 | Submit a join request. Body `{churchId}`. |
-| GET | `/` | 🔒 | List join requests. Query params: `status` (`PENDING\|APPROVED\|REJECTED`), `churchId` (uuid). |
+| GET | `/` | 🔒 | List join requests (admin only). Query params: `status` (`PENDING\|APPROVED\|REJECTED`), `churchId` (uuid). |
 | POST | `/cancel` | 🔒 | The authenticated member cancels their **pending** join request. Body `{membershipId}`. |
 | POST | `/approve` | 🔒 | Approve. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN of the church. |
 | POST | `/reject` | 🔒 | Reject. Body `{membershipId, rejectionReason?}`. Requires ADMIN/SUPER_ADMIN of the church. |
-| POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason?}`. Requires ADMIN/SUPER_ADMIN. |
+| POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason}`. Requires ADMIN/SUPER_ADMIN. |
 | POST | `/unban` | 🔒 | Lift a ban so the user can submit join requests again. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN. |
 
 ### Payments — `{base}/payments` (also mounted at `{base}`)

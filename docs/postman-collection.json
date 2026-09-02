@@ -167,6 +167,33 @@
           }
         },
         {
+          "name": "Google token exchange (mobile)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.refreshToken || '');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idToken\": \"<GOOGLE_ID_TOKEN>\",\n  \"platform\": \"android\",\n  \"accountType\": \"MEMBER\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/google/token", "host": ["{{baseUrl}}"], "path": ["auth", "google", "token"] }
+          }
+        },
+        {
           "name": "Forgot password",
           "request": {
             "method": "POST",
@@ -265,7 +292,7 @@
               "script": {
                 "exec": [
                   "const body = pm.response.json();",
-                  "if (body.data && body.data.churchId) pm.collectionVariables.set('churchId', body.data.churchId);"
+                  "if (body.church && body.church.id) pm.collectionVariables.set('churchId', body.church.id);"
                 ],
                 "type": "text/javascript"
               }
@@ -346,6 +373,45 @@
             "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
             "description": "The authenticated member leaves an APPROVED church. Set the {{churchId}} variable.",
             "url": { "raw": "{{baseUrl}}/churches/{{churchId}}/leave", "host": ["{{baseUrl}}"], "path": ["churches", "{{churchId}}", "leave"] }
+          }
+        },
+        {
+          "name": "List church admins",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "List the admins of a church. Requires an ADMIN/SUPER_ADMIN of that church. Set the {{churchId}} variable.",
+            "url": { "raw": "{{baseUrl}}/churches/{{churchId}}/admins", "host": ["{{baseUrl}}"], "path": ["churches", "{{churchId}}", "admins"] }
+          }
+        },
+        {
+          "name": "Delete church (SUPER_ADMIN only)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Permanently delete a church and cascade its memberships, admins, service times and ministries. Requires SUPER_ADMIN. Set the {{churchId}} variable.",
+            "url": { "raw": "{{baseUrl}}/churches/{{churchId}}", "host": ["{{baseUrl}}"], "path": ["churches", "{{churchId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Church Requests",
+      "item": [
+        {
+          "name": "Submit church request",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "description": "Request that a church be onboarded. Exactly one of phoneContact or emailContact is required.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"churchName\": \"Grace Chapel\",\n  \"city\": \"Lagos\",\n  \"leaderName\": \"Jane Doe\",\n  \"phoneContact\": \"+2348012345678\",\n  \"phoneCountryCode\": \"NG\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/church-requests", "host": ["{{baseUrl}}"], "path": ["church-requests"] }
           }
         }
       ]
