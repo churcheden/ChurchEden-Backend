@@ -201,7 +201,7 @@ export const loginUser = catchAsync(async (req: Request, res: Response) => {
         }
     }
 
-    if (!admin && !user) {
+    if (!admin || !user) {
         wideLogger.addCtx('login_fail_reason', 'not_found');
         throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
     }
