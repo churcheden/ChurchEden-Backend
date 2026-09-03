@@ -190,7 +190,7 @@ export const loginUser = catchAsync(async (req: Request, res: Response) => {
     //  - MOBILE tries SuperAdmin first, then falls back to Member — an admin may also
     //    want to authenticate on the mobile app.
     let superAdmin = await prisma.superAdmin.findUnique({ where: { email } });
-    let member: { id: string; email: string; isVerified: boolean; password: string | null; churchId: string } | null = null;
+    let member: { id: string; email: string; isVerified: boolean; password: string | null; churchId: string | null } | null = null;
 
     if (!superAdmin && !isWeb) {
         member = await prisma.member.findUnique({ where: { email } });
@@ -764,18 +764,16 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
     }
 
     // MEMBER-context exchange: find or link existing Member, or create new.
-    // Member requires churchId.
-    if (!churchId) {
-        throw new AppError('churchId is required for member sign-in.', 400, 'MISSING_CHURCH_ID');
-    }
-
-    // Verify the church exists.
-    const church = await prisma.church.findUnique({
-        where: { id: churchId },
-        select: { id: true },
-    });
-    if (!church) {
-        throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
+    // A Member may be created without a church (churchId is optional); when a
+    // churchId is supplied we verify it and attach the Member to that church.
+    if (churchId) {
+        const church = await prisma.church.findUnique({
+            where: { id: churchId },
+            select: { id: true },
+        });
+        if (!church) {
+            throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
+        }
     }
 
     let member = await prisma.member.findUnique({ where: { googleId: payload.sub } });
@@ -788,6 +786,7 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
                 data: {
                     googleId: payload.sub,
                     isVerified: true,
+                    ...(churchId ? { churchId } : {}),
                 },
             });
         }
@@ -799,7 +798,7 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
                 email,
                 googleId: payload.sub,
                 isVerified: true,
-                churchId,
+                ...(churchId ? { churchId } : {}),
             },
         });
     }

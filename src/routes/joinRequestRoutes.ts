@@ -34,7 +34,7 @@ const resolveChurchFromMembership = async (req: AuthenticatedRequest): Promise<s
         where: { id: membershipId },
         select: { churchId: true },
     });
-    if (!member) {
+    if (!member || !member.churchId) {
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
     return member.churchId;

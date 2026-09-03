@@ -11,7 +11,7 @@ export const googleStrategy = new GoogleStrategy({
     callbackURL: env.GOOGLE_CALLBACK_URL,
     passReqToCallback: true,
     scope: ['profile', 'email']
-},  async(_req, _accessToken, _refreshToken, profile, done) => {
+},  async(req, _accessToken, _refreshToken, profile, done) => {
     try{
         const { id: googleId, emails, displayName } = profile;
         const email = emails?.[0]?.value;
@@ -19,6 +19,41 @@ export const googleStrategy = new GoogleStrategy({
         if(!email) {
             return done(new Error("No email found in Google profile!"));
         };
+
+        // Mobile Google sign-in authenticates a Member (a church member), never
+        // a SuperAdmin. A brand-new mobile user gets a Member row immediately
+        // (churchId is optional) and links a church later via the join-request
+        // flow. This mirrors the ID-token exchange in exchangeGoogleToken.
+        const platform =
+            (req?.query?.platform as string) ||
+            (req?.headers?.['x-client-platform'] as string) ||
+            'web';
+
+        if (platform === 'mobile') {
+            let member = await prisma.member.findUnique({ where: { googleId } });
+
+            if (!member) {
+                member = await prisma.member.findUnique({ where: { email } });
+                if (member) {
+                    member = await prisma.member.update({
+                        where: { id: member.id },
+                        data: { googleId, isVerified: true },
+                    });
+                }
+            }
+
+            if (!member) {
+                member = await prisma.member.create({
+                    data: {
+                        email,
+                        googleId,
+                        isVerified: true,
+                    },
+                });
+            }
+
+            return done(null, { ...member, accountType: 'MEMBER' as const });
+        }
 
         // Web Google sign-in is admin-only — authenticate against SuperAdmin.
         let superAdmin = await prisma.superAdmin.findUnique({

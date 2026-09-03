@@ -162,8 +162,8 @@ model Member {
   isVerified Boolean        @default(false) // Checks phone number verification
   role       ChurchRole     @default(MEMBER) // A member can be elevated to an Admin rank by only the Super Admin
 
-  churchId String
-  church   Church @relation(fields: [churchId], references: [id], onDelete: Cascade)
+  churchId String?
+  church   Church? @relation(fields: [churchId], references: [id], onDelete: Cascade)
 
   status          MembershipStatus @default(PENDING) // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
   rejectionReason String? // set when an admin rejects a join request

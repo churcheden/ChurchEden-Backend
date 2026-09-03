@@ -101,6 +101,25 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
             );
         }
 
+        // Unaffiliated member (created via Google sign-in without a church) →
+        // attach them to this church in place so the Google link is kept.
+        if (existing.churchId === null) {
+            const member = await prisma.member.update({
+                where: { id: existing.id },
+                data: { churchId, status: 'PENDING', rejectionReason: null, joinedAt: new Date() },
+                include: MEMBER_INCLUDE,
+            });
+
+            await CacheService.delete(cacheKeys.userMe(userId));
+
+            wideLogger.addCtx('submit_join_request', 'success');
+            return res.status(200).json({
+                status: 'success',
+                message: 'Join request submitted successfully!',
+                member,
+            });
+        }
+
         // REJECTED or PENDING in a different church → update to new church
         let member;
         let created = false;
