@@ -619,8 +619,19 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
             });
 
             setAuthCookies(res, accessToken, refreshToken);
+
+            // A SuperAdmin's "profile" is complete once they have onboarded a
+            // church (church onboarding step-1..complete creates the Church
+            // owned by this SuperAdmin). Fresh Google sign-ups have no church
+            // yet, so redirect them into the church onboarding flow.
+            const hasChurch = await prisma.church.findUnique({
+                where: { superAdminId: superAdmin.id },
+                select: { id: true },
+            });
+
             wideLogger.addCtx('google_admin_result', 'success');
-            return res.redirect(`${frontendUrl}/auth/callback`);
+            wideLogger.addCtx('profile_complete', !!hasChurch);
+            return res.redirect(`${frontendUrl}/auth/callback?profileComplete=${!!hasChurch}`);
         }
 
         wideLogger.addCtx('user_id', user.id);
