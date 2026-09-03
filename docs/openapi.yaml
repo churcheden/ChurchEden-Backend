@@ -591,7 +591,7 @@ paths:
                   code:
                     type: string
                     example: INCOMPLETE_ONBOARDING
-                  message: { type: string, example: Incomplete onboarding. Please complete: step-1, step-3. }
+                  message: { type: string, example: 'Incomplete onboarding. Please complete: step-1, step-3.' }
         '404':
           $ref: '#/components/responses/NotFound'
         '401':
