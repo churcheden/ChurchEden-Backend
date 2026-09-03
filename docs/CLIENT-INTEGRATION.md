@@ -84,14 +84,45 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 | draft | `GET /onboarding/church/draft` | `404 DRAFT_NOT_FOUND` until step 1 is saved |
 | complete | `POST /onboarding/church/complete` | Creates the church + service times & ministries; the SuperAdmin becomes the church owner |
 
+### 3.1 Step ordering / prerequisite checks (server-enforced)
+
+Each step `PATCH` validates that **every earlier step** is already saved in the
+draft cache — not just the immediately-previous one. This guards against
+sparse/out-of-order drafts (e.g. step-2 present but step-1 missing because the
+cache expired) and ensures a client can never jump ahead of an incomplete
+onboarding.
+
+| Step being saved | Validates saved-steps | Error code(s) returned (earliest missing first) |
+| --- | --- | --- |
+| `step-2` | step-1 | `STEP_1_REQUIRED` |
+| `step-3` | step-1, step-2 | `STEP_1_REQUIRED`, `STEP_2_REQUIRED` |
+| `step-4` | step-1, step-2, step-3 | `STEP_1_REQUIRED`, `STEP_2_REQUIRED`, `STEP_3_REQUIRED` |
+| `complete` | step-1, step-2, step-3, step-4 | `INCOMPLETE_ONBOARDING` (message lists missing steps, e.g. `step-1, step-3`) |
+
+**Client contract:**
+- On a step-`PATCH`, expect `400` with a `code` in `{ STEP_1_REQUIRED,
+  STEP_2_REQUIRED, STEP_3_REQUIRED }`. Map the **strictly-first** missing step to
+  the corresponding page and redirect the user there:
+  - `STEP_1_REQUIRED` → Step 1 (`church-basics`)
+  - `STEP_2_REQUIRED` → Step 2 (`location-contact`)
+  - `STEP_3_REQUIRED` → Step 3 (`service-branding`)
+- Handle `DRAFT_NOT_FOUND` (404) the same as `STEP_1_REQUIRED` (nothing saved yet).
+- Only call `POST /onboarding/church/complete` once all 4 steps are saved. A
+  `400 INCOMPLETE_ONBOARDING` means at least one prior step is missing — parse
+  the earliest `step-N` from the message and redirect there. Do **not** treat
+  `INCOMPLETE_ONBOARDING` as a server failure; it is a flow-control signal.
+
+> `step-4` (ministries) is **optional in content** but must still be **saved**
+> before `complete` succeeds — `complete` requires the `ministryIds` /
+> `customMinistries` keys to be present in the draft (empty arrays are fine).
+> Clients should call `step-4` even when the user selects no ministries.
+
 - Step 1 validates **all** fields (only `foundedYear` is optional), so the UI
   should re-submit the full form, not partial diffs.
 - `timeZone` must be an IANA name **listed in `Intl.supportedValuesOf('timeZone')`
   of the Node runtime**. `'UTC'` (case-insensitive) is accepted and automatically
   normalized to `Etc/UTC` (which is the canonical IANA form).
 - `serviceTimes[].dayOfWeek`: 0 = Sunday … 6 = Saturday; `time` is 24h `HH:MM`.
-- Incomplete steps: `PATCH` errors reference the missing step, e.g.
-  `DRAFT_NOT_FOUND` for `complete` without any step.
 
 ---
 
@@ -183,7 +214,9 @@ Subscription billing applies to the **church** (owned by a SuperAdmin).
 - Common codes: `VALIDATION_FAILED` (400), `UNAUTHORIZED` (401),
   `MISSING_TOKEN` (401), `EMAIL_NOT_VERIFIED` (403), `PageNotFound` (404),
   `DRAFT_NOT_FOUND` (404), `TRANSACTION_NOT_FOUND` (404), `ALREADY_PREMIUM` (409),
-  `EMAIL_EXISTS` (409), `BANNED_FROM_CHURCH` (403).
+  `EMAIL_EXISTS` (409), `BANNED_FROM_CHURCH` (403). Onboarding step-ordering
+  errors (all `400`): `STEP_1_REQUIRED`, `STEP_2_REQUIRED`, `STEP_3_REQUIRED`,
+  `INCOMPLETE_ONBOARDING` (see §3.1).
 - **Rate limits** (`express-rate-limit`, check middleware for exact windows):
   a global API limiter applies to all `/api/v1` routes, plus per-route limiters
   on register/login/OTP-resend and password endpoints. Exceeded → `429`.

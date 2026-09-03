@@ -87,7 +87,59 @@ const findIncompleteSteps = (draft: ChurchOnboardingDraft): string[] => {
 
     if (!Array.isArray(draft.serviceTimes) || draft.serviceTimes.length === 0) missing.push('step-3');
 
+    if (!hasOnboardingStep4(draft)) missing.push('step-4');
+
     return missing;
+};
+
+const hasOnboardingStep1 = (draft: ChurchOnboardingDraft): boolean =>
+    REQUIRED_STEP_1.every((field) => {
+        const value = draft[field as keyof ChurchOnboardingDraft];
+        return value !== undefined && value !== null && String(value).trim() !== '';
+    });
+
+const hasOnboardingStep2 = (draft: ChurchOnboardingDraft): boolean =>
+    REQUIRED_STEP_2.every((field) => {
+        const value = draft[field as keyof ChurchOnboardingDraft];
+        return value !== undefined && value !== null && String(value).trim() !== '';
+    });
+
+const hasOnboardingStep3 = (draft: ChurchOnboardingDraft): boolean =>
+    Array.isArray(draft.serviceTimes) && draft.serviceTimes.length > 0;
+
+// Ministries are optional in content, so step-4 counts as complete once it has
+// been saved (both keys present in the draft, even if empty arrays).
+const hasOnboardingStep4 = (draft: ChurchOnboardingDraft): boolean =>
+    Array.isArray(draft.ministryIds) && Array.isArray(draft.customMinistries);
+
+/**
+ * Ensures every step BEFORE `nextStep` is already saved in the cache draft.
+ * Returns the first missing step so clients can redirect the user to the
+ * earliest incomplete step. This protects against sparse/out-of-order drafts
+ * (e.g. step-2 present but step-1 missing).
+ */
+const requirePriorStep = (draft: ChurchOnboardingDraft, nextStep: 2 | 3 | 4): void => {
+    if (nextStep >= 2 && !hasOnboardingStep1(draft)) {
+        throw new AppError(
+            'Please complete Church Basics before continuing.',
+            400,
+            'STEP_1_REQUIRED',
+        );
+    }
+    if (nextStep >= 3 && !hasOnboardingStep2(draft)) {
+        throw new AppError(
+            'Please complete Location & Contact before continuing.',
+            400,
+            'STEP_2_REQUIRED',
+        );
+    }
+    if (nextStep >= 4 && !hasOnboardingStep3(draft)) {
+        throw new AppError(
+            'Please complete Service Schedule & Branding before continuing.',
+            400,
+            'STEP_3_REQUIRED',
+        );
+    }
 };
 
 // PATCH /api/v1/onboarding/church/step-1
@@ -130,6 +182,8 @@ export const saveOnboardingStep2 = catchAsync(async (req: AuthenticatedRequest, 
     const key = cacheKeys.churchOnboardingDraft(userId);
     const draft = await getDraftOrThrow(userId);
 
+    requirePriorStep(draft, 2);
+
     const normalizedPhone = parseChurchPhone(data.phone, data.country);
     const merged: ChurchOnboardingDraft = { ...draft, ...data, phone: normalizedPhone };
 
@@ -156,6 +210,8 @@ export const saveOnboardingStep3 = catchAsync(async (req: AuthenticatedRequest, 
     const data = req.body as Step3Input;
     const key = cacheKeys.churchOnboardingDraft(userId);
     const draft = await getDraftOrThrow(userId);
+
+    requirePriorStep(draft, 3);
 
     const merged: ChurchOnboardingDraft = {
         ...draft,
@@ -189,6 +245,8 @@ export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, 
     const data = req.body as Step4Input;
     const key = cacheKeys.churchOnboardingDraft(userId);
     const draft = await getDraftOrThrow(userId);
+
+    requirePriorStep(draft, 4);
 
     const merged: ChurchOnboardingDraft = {
         ...draft,

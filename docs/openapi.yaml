@@ -439,7 +439,15 @@ paths:
       responses:
         '200': { description: Step saved. }
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: Validation error, or a prior step is missing.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: error }
+                  code: { type: string, example: STEP_1_REQUIRED }
+                  message: { type: string, example: Please complete Church Basics before continuing. }
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -466,7 +474,17 @@ paths:
       responses:
         '200': { description: Step saved. }
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: >-
+            Validation error, or a prior step is missing
+            (`STEP_1_REQUIRED` or `STEP_2_REQUIRED`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: error }
+                  code: { type: string, example: STEP_2_REQUIRED }
+                  message: { type: string, example: Please complete Location & Contact before continuing. }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '413':
@@ -503,7 +521,17 @@ paths:
       responses:
         '200': { description: Step saved. }
         '400':
-          $ref: '#/components/responses/ValidationError'
+          description: >-
+            Validation error, or a prior step is missing
+            (`STEP_1_REQUIRED`, `STEP_2_REQUIRED` or `STEP_3_REQUIRED`).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: error }
+                  code: { type: string, example: STEP_3_REQUIRED }
+                  message: { type: string, example: Please complete Service Schedule & Branding before continuing. }
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -533,7 +561,8 @@ paths:
       security: [{ bearerAuth: [] }]
       summary: Create the church and default ministries
       description: >
-        Requires all four steps to be saved. Creates the Church with the caller
+        Requires all four steps to be saved (step 4 — ministries — is optional
+        in content but must still be saved). Creates the Church with the caller
         as its owning SuperAdmin (`Church.superAdminId`), plus service times and
         ministries, then clears the draft cache.
       responses:
@@ -550,16 +579,19 @@ paths:
                     type: object
                     description: The created Church record (owned by the SuperAdmin).
         '400':
-          description: Onboarding incomplete or invalid inputs.
+          description: >
+            Onboarding incomplete — the message lists the earliest missing
+            step(s), e.g. `step-1, step-3`. Redirect the client there.
           content:
             application/json:
               schema:
                 type: object
                 properties:
+                  status: { type: string, example: error }
                   code:
                     type: string
                     example: INCOMPLETE_ONBOARDING
-                  message: { type: string }
+                  message: { type: string, example: Incomplete onboarding. Please complete: step-1, step-3. }
         '404':
           $ref: '#/components/responses/NotFound'
         '401':

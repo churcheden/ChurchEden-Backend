@@ -243,7 +243,8 @@
               "mode": "raw",
               "raw": "{\n  \"country\": \"NG\",\n  \"city\": \"Lagos\",\n  \"address\": \"12 Broad Street\",\n  \"phone\": \"+2348012345678\",\n  \"email\": \"church@example.com\",\n  \"primaryLanguage\": \"ENGLISH\",\n  \"timeZone\": \"Africa/Lagos\"\n}"
             },
-            "url": { "raw": "{{baseUrl}}/onboarding/church/step-2", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-2"] }
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-2", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-2"] },
+            "description": "Requires Step 1 already saved. Returns 400 STEP_1_REQUIRED if Step 1 is missing from the draft cache."
           }
         },
         {
@@ -258,7 +259,8 @@
                 { "key": "serviceTimes", "value": "[{\"label\":\"Sunday Service\",\"dayOfWeek\":0,\"time\":\"10:30\"}]" }
               ]
             },
-            "url": { "raw": "{{baseUrl}}/onboarding/church/step-3", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-3"] }
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-3", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-3"] },
+            "description": "Requires Steps 1-2 already saved. Returns 400 STEP_1_REQUIRED or STEP_2_REQUIRED if any prior step is missing from the draft cache."
           }
         },
         {
@@ -273,7 +275,8 @@
               "mode": "raw",
               "raw": "{\n  \"ministryIds\": [],\n  \"customMinistries\": [\n    {\"name\": \"Choir\", \"type\": \"MINISTRY\", \"description\": \"Worship team\"}\n  ]\n}"
             },
-            "url": { "raw": "{{baseUrl}}/onboarding/church/step-4", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-4"] }
+            "url": { "raw": "{{baseUrl}}/onboarding/church/step-4", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "step-4"] },
+            "description": "Requires Steps 1-3 already saved. Returns 400 STEP_1_REQUIRED / STEP_2_REQUIRED / STEP_3_REQUIRED if any prior step is missing. Ministries are optional in content, but this step must still be saved before /complete."
           }
         },
         {
@@ -305,7 +308,8 @@
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{accessToken}}" }
             ],
-            "url": { "raw": "{{baseUrl}}/onboarding/church/complete", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "complete"] }
+            "url": { "raw": "{{baseUrl}}/onboarding/church/complete", "host": ["{{baseUrl}}"], "path": ["onboarding", "church", "complete"] },
+            "description": "Creates the church. Requires all four steps saved; returns 400 INCOMPLETE_ONBOARDING (message lists the earliest missing step(s)) or 404 DRAFT_NOT_FOUND otherwise."
           }
         }
       ]

@@ -55,6 +55,13 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | GET | `/draft` | 🔒 | Resume a saved onboarding draft. |
 | POST | `/complete` | 🔒 | Finish onboarding. Returns the created `church`. The SuperAdmin becomes the church owner. |
 
+Onboarding is strictly sequential: each step `PATCH` requires **every earlier
+step** to be saved in the draft cache first. Guarding codes (all `400`):
+`STEP_1_REQUIRED`, `STEP_2_REQUIRED`, `STEP_3_REQUIRED` on steps 2–4, plus
+`INCOMPLETE_ONBOARDING` from `/complete` if any of steps 1–4 is missing. Each
+step must be saved before the next can accept data; see
+[`docs/CLIENT-INTEGRATION.md` §3.1](docs/CLIENT-INTEGRATION.md).
+
 ### Members — `{base}/members`
 
 | Method | Path | Auth | Description |
