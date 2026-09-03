@@ -120,30 +120,24 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
             });
         }
 
-        // REJECTED or PENDING in a different church → update to new church
-        let member;
-        let created = false;
-
-        if (existing.status === 'REJECTED' && existing.churchId === churchId) {
-            member = await prisma.member.update({
-                where: { id: existing.id },
-                data: { status: 'PENDING', rejectionReason: null, churchId, joinedAt: new Date() },
-                include: MEMBER_INCLUDE,
-            });
-        } else {
-            // Delete old record and create new one for different church
-            await prisma.member.delete({ where: { id: existing.id } });
-            created = true;
-            member = await prisma.member.create({
-                data: { email: userEmail, churchId, isVerified: true },
-                include: MEMBER_INCLUDE,
-            });
-        }
+        // REJECTED in a different church, or PENDING in a different church →
+        // move the existing member record to the new church without deleting
+        // it, preserving the Google link and any profile data.
+        const member = await prisma.member.update({
+            where: { id: existing.id },
+            data: {
+                churchId,
+                status: 'PENDING',
+                rejectionReason: null,
+                joinedAt: new Date(),
+            },
+            include: MEMBER_INCLUDE,
+        });
 
         await CacheService.delete(cacheKeys.userMe(userId));
 
         wideLogger.addCtx('submit_join_request', 'success');
-        return res.status(created ? 201 : 200).json({
+        return res.status(200).json({
             status: 'success',
             message: 'Join request submitted successfully!',
             member,
@@ -170,6 +164,10 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 });
 
 // POST /api/v1/join-requests/cancel
+// Cancelling a pending join request detaches the member from the church they
+// applied to. The Member account itself is preserved (it may hold a Google
+// link and profile data) — only the church affiliation is removed so the
+// member can apply elsewhere.
 export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'cancel_join_request');
     const userId = req.user?.id;
@@ -186,7 +184,7 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 
     const member = await prisma.member.findUnique({
         where: { id: userId },
-        select: { id: true, status: true },
+        select: { id: true, churchId: true, status: true },
     });
 
     if (!member) {
@@ -194,7 +192,7 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Member not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
-    if (member.status !== 'PENDING') {
+    if (member.churchId === null || member.status !== 'PENDING') {
         wideLogger.addCtx('cancel_join_request', 'not_pending');
         throw new AppError(
             'Only a pending join request can be cancelled.',
@@ -203,7 +201,15 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
         );
     }
 
-    await prisma.member.delete({ where: { id: member.id } });
+    const updated = await prisma.member.update({
+        where: { id: member.id },
+        data: {
+            churchId: null,
+            status: 'PENDING',
+            rejectionReason: null,
+        },
+        include: MEMBER_INCLUDE,
+    });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
@@ -211,6 +217,7 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
     return res.status(200).json({
         status: 'success',
         message: 'Join request cancelled successfully.',
+        member: updated,
     });
 });
 

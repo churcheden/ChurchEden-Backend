@@ -86,8 +86,16 @@ export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Res
         );
     }
 
-    // Deleting the Member record removes the membership entirely.
-    await prisma.member.delete({ where: { id: member.id } });
+    // Leaving detaches the member from the church — the Member account (and
+    // its Google link / profile) is preserved so they can join elsewhere.
+    await prisma.member.update({
+        where: { id: member.id },
+        data: {
+            churchId: null,
+            status: 'PENDING',
+            rejectionReason: null,
+        },
+    });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
