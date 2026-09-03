@@ -50,17 +50,20 @@ revokes that access token. Send the header on mobile so both tokens die.
 2. Google redirects back to `/auth/google/callback`. On success the browser is
    redirected to `${FRONTEND_URL}/auth/callback?profileComplete=<true|false>`
    with JWT cookies set. On failure: `${FRONTEND_URL}/sign-in?error=auth_failed`.
-3. New Google users are auto-verified with a random password (they can never use
-   the email/password path until a password reset). Existing email accounts are
-   linked and verified.
+3. **Web** sign-in authenticates a **SuperAdmin** (church owner). **Mobile**
+   (`/auth/google/token`) authenticates a **Member**; when no Member record
+   exists for the Google account yet, `churchId` **must** be supplied in the body
+   so the Member can be created with it (the Member model requires `churchId`).
 
 ### 2.4 Current user
-`GET /auth/me` (Bearer) → current user payload.
+`GET /auth/me` (Bearer) → current user payload. Returns `accountType` of either
+`ADMIN` (SuperAdmin) or `MEMBER`.
 
 ### 2.5 Password reset
 `POST /auth/forgot-password` `{ email }` → always succeeds (no account
 enumeration). `POST /auth/reset-password` `{ token, newPassword }`. The token
-is in the `forgot-password` email.
+is in the `forgot-password` email. This flow targets **SuperAdmin** accounts only
+(Members authenticate via Google and do not set a password).
 
 ---
 
@@ -79,7 +82,7 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 | 3 media | `PATCH /onboarding/church/step-3` | multipart: `logo` (≤ 5 MB) + `serviceTimes` as a **JSON string** |
 | 4 ministries | `PATCH /onboarding/church/step-4` | `ministryIds` + `customMinistries` |
 | draft | `GET /onboarding/church/draft` | `404 DRAFT_NOT_FOUND` until step 1 is saved |
-| complete | `POST /onboarding/church/complete` | Creates the church, SUPER_ADMIN membership, service times & ministries |
+| complete | `POST /onboarding/church/complete` | Creates the church + service times & ministries; the SuperAdmin becomes the church owner |
 
 - Step 1 validates **all** fields (only `foundedYear` is optional), so the UI
   should re-submit the full form, not partial diffs.
@@ -112,8 +115,8 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 | Endpoint | Notes |
 | --- | --- |
 | `GET /churches` | List the church directory; add `?q=<name or city>` to search. Returns `{ churches: [...] }` |
-| `GET /churches/:churchId/admins` | List a church's admins (`ADMIN`/`SUPER_ADMIN`) |
-| `POST /churches/:churchId/leave` | The member leaves an **approved** church (role `MEMBER`); no body |
+| `GET /churches/:churchId/admins` | List a church's leadership: the owning `SuperAdmin` plus member-level `ADMIN`/`SUPER_ADMIN` |
+| `POST /churches/:churchId/leave` | The member leaves an **approved** church (role `MEMBER`); deletes the Member record |
 
 - `leave` and `join-requests/cancel` are how a member manages their own
   membership/request without needing an admin role.
@@ -124,18 +127,21 @@ step-1 ─► step-2 ─► step-3 ─► step-4 ─► /complete
 
 | Endpoint | Notes |
 | --- | --- |
-| `POST /join-requests` `{ churchId }` | Create a `ChurchMembership` with status `PENDING` |
-| `GET /join-requests` | Own requests; admins add `?status=PENDING&churchId=` to list their church's pool; SUPER_ADMIN sees all churches |
-| `POST /join-requests/cancel` `{ membershipId }` | The member cancels their own **pending** request (role `MEMBER`) |
-| `POST /join-requests/approve` `{ membershipId }` | Requires `ADMIN`/`SUPER_ADMIN` of that church |
+| `POST /join-requests` `{ churchId }` | Creates a `Member` with status `PENDING`; `churchId` is **required** |
+| `GET /join-requests` | SuperAdmin lists their church's requests (`?status=PENDING` to filter) |
+| `POST /join-requests/cancel` `{ membershipId }` | The member cancels their own **pending** request (role `MEMBER`); deletes the Member record |
+| `POST /join-requests/approve` `{ membershipId }` | Requires `SUPER_ADMIN` of that church |
 | `POST /join-requests/reject` `{ membershipId, rejectionReason? }` | Same role requirement |
-| `POST /join-requests/ban` `{ membershipId, banReason? }` | Bans the user from that church (any further `POST /join-requests` → `403 BANNED_FROM_CHURCH`) |
-| `POST /join-requests/unban` `{ membershipId }` | Reverses a ban so the user can submit a request again |
+| `POST /join-requests/ban` `{ membershipId, banReason? }` | Bans the member from that church (any further `POST /join-requests` → `403 BANNED_FROM_CHURCH`) |
+| `POST /join-requests/unban` `{ membershipId }` | Reverses a ban so the member can submit a request again |
 
-**Banning.** `ban` marks the membership `isBanned` and REJECTED, storing an
-optional reason. A banned user is refused on submit with `403 BANNED_FROM_CHURCH`.
-Both `ban` and `unban` require `ADMIN`/`SUPER_ADMIN` of that church. Banning is
-per-church — it does not affect the user's memberships elsewhere.
+`{ membershipId }` is the **Member record's id** — since a Member is 1:1 with a
+church (via `churchId`), the join request IS the Member row with `status: PENDING`.
+
+**Banning.** `ban` marks the member `isBanned` and REJECTED, storing an
+optional reason. A banned member is refused on submit with `403 BANNED_FROM_CHURCH`.
+Both `ban` and `unban` require `SUPER_ADMIN` of that church. Banning is
+per-church — it does not affect the member elsewhere.
 
 **Known gap:** approve/reject do **not** currently send the applicant a
 notification (email/SMS). Populate the client UI from the list response.
@@ -144,17 +150,20 @@ notification (email/SMS). Populate the client UI from the list response.
 
 ## 7. Payments (Paystack)
 
+Subscription billing applies to the **church** (owned by a SuperAdmin).
+
 | Endpoint | Notes |
 | --- | --- |
-| `GET /payments/initialize` | Creates a pending `Transaction` + Paystack subscription checkout URL `{ data.authorizationUrl }` |
-| `GET /payments/initialize/verify/:reference` | Poll after payment; use the returned `reference` |
-| `GET /payments/subscription/cancel` | Cancels the active subscription |
+| `GET /payments/initialize` | Creates a pending `ChurchTransaction` + Paystack subscription checkout URL `{ data.authorizationUrl }` (SuperAdmin only) |
+| `GET /payments/initialize/verify/:reference` | Poll after payment; upgrades the church plan |
+| `GET /payments/subscription/cancel` | Cancels the church's active subscription |
 | `POST /webhooks/paystack` | Signed webhook; **responds 200 before async work**, so poll `verify` (or DB) rather than relying on webhook timing |
 
 - Money is in **Ghanaian cedis (GHS)**, passed to Paystack as the minor unit via
   `SUBSCRIPTION_AMOUNT_KOBO` (default `2000`, i.e. GHS 20.00). Good to read from
   `.env.example` — the exact value is environment-configurable.
-- A user with an active subscription gets `409 ALREADY_PREMIUM` from `initialize`.
+- A SuperAdmin whose church already has a non-FREE plan gets
+  `409 ALREADY_PREMIUM` from `initialize`.
 - **Webhook signatures:** HMAC-SHA512 of the raw request body with
   `PAYSTACK_SECRET_KEY` in the `x-paystack-signature` header. If you self-test
   with an HTTP client, send the **raw JSON string** — serializing a Buffer
@@ -188,7 +197,7 @@ notification (email/SMS). Populate the client UI from the list response.
 1. **Mobile `x-client-platform` header — unused.** The backend never reads it
    and doesn't yet store `deviceInfo` on refresh; mobile must persist tokens
    itself. Web should rely on cookies, not body refresh.
-2. **`Transaction.status` is a plain string**, not an enum — normalize client-side.
+2. **`ChurchTransaction.status` is a plain string**, not an enum — normalize client-side.
 3. **Payment routes use `GET`** for state-changing operations (initialize,
    verify, cancel) — matches the implementation, unusual for REST.
 4. **Join approve/reject have no applicant notification** (see §5).

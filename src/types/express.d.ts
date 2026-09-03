@@ -6,6 +6,8 @@ declare global {
       user?: {
         id: string;
         email: string;
+        accountType: 'ADMIN' | 'MEMBER';
+        adminId?: string;
       };
     }
   }

@@ -91,8 +91,8 @@ paths:
       tags: [Auth]
       summary: Login, set JWT cookies
       description: >
-        Authenticates against the `Admin` table on web (`x-client-platform: web`,
-        the default) and against `Admin` then `User` on mobile. On success the
+        Authenticates against the `SuperAdmin` table on web (`x-client-platform: web`,
+        the default) and against `SuperAdmin` then `Member` on mobile. On success the
         JWT pair (`accessToken`, `refreshToken`) is returned in the body and the
         `token`/`refreshToken` HttpOnly cookies are set. Unverified users receive
         a 403/EMAIL_NOT_VERIFIED error.
@@ -531,11 +531,11 @@ paths:
     post:
       tags: [Onboarding]
       security: [{ bearerAuth: [] }]
-      summary: Create the church, admin membership and default ministries
+      summary: Create the church and default ministries
       description: >
-        Requires all four steps to be saved. Creates the Church, a SUPER_ADMIN
-        Admin row (linked to the caller) and an APPROVED MEMBER membership,
-        plus service times and ministries, then clears the draft cache.
+        Requires all four steps to be saved. Creates the Church with the caller
+        as its owning SuperAdmin (`Church.superAdminId`), plus service times and
+        ministries, then clears the draft cache.
       responses:
         '200':
           description: Church created.
@@ -548,13 +548,7 @@ paths:
                   message: { type: string, example: Church created successfully! }
                   church:
                     type: object
-                    description: The created Church record.
-                  membership:
-                    type: object
-                    description: The founding user's APPROVED MEMBER membership.
-                  admin:
-                    type: object
-                    description: The founding user's SUPER_ADMIN Admin row.
+                    description: The created Church record (owned by the SuperAdmin).
         '400':
           description: Onboarding incomplete or invalid inputs.
           content:
@@ -653,7 +647,10 @@ paths:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
       summary: Submit a join-request for a church
-      description: Returns ALREADY_MEMBER / ALREADY_PENDING conflicts when already approved or pending.
+      description: >
+        Creates (or re-submits) a `Member` record with `churchId` and the
+        caller's email. Returns ALREADY_MEMBER / ALREADY_PENDING conflicts when
+        already approved or pending.
       requestBody:
         required: true
         content:
@@ -673,8 +670,8 @@ paths:
                 properties:
                   status: { type: string, example: success }
                   message: { type: string, example: Join request submitted successfully! }
-                  membership:
-                    $ref: '#/components/schemas/ChurchMembership'
+                  member:
+                    $ref: '#/components/schemas/Member'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
@@ -691,22 +688,18 @@ paths:
     get:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: List join-requests (admin only)
+      summary: List join-requests (SuperAdmin only)
       description: >
-        Requires an ADMIN account with at least one managed church. Returns
-        pending requests (or a given `status`) across all churches the caller
-        administers, or narrows to a single `churchId` the caller manages.
+        Requires a SuperAdmin account that owns a church. Returns the church's
+        requests (Members) by `status` (defaults to PENDING).
       parameters:
         - in: query
           name: status
           schema: { $ref: '#/components/schemas/MembershipStatus' }
           description: Defaults to PENDING.
-        - in: query
-          name: churchId
-          schema: { type: string, format: uuid }
       responses:
         '200':
-          description: Matching requests with joined user + profile.
+          description: Matching requests with joined member profile.
           content:
             application/json:
               schema:
@@ -716,7 +709,7 @@ paths:
                   requests:
                     type: array
                     items:
-                      $ref: '#/components/schemas/ChurchMembership'
+                      $ref: '#/components/schemas/Member'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -762,7 +755,7 @@ paths:
     post:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: Approve a pending membership (church ADMIN/SUPER_ADMIN)
+      summary: Approve a pending membership (church SUPER_ADMIN)
       requestBody:
         required: true
         content:
@@ -781,10 +774,10 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  membership:
-                    $ref: '#/components/schemas/ChurchMembership'
+                  member:
+                    $ref: '#/components/schemas/Member'
         '403':
-          description: Caller is not an admin of the target church.
+          description: Caller is not the owner of the target church.
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
@@ -793,7 +786,7 @@ paths:
     post:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: Reject a pending membership (church ADMIN/SUPER_ADMIN)
+      summary: Reject a pending membership (church SUPER_ADMIN)
       requestBody:
         required: true
         content:
@@ -813,8 +806,8 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  membership:
-                    $ref: '#/components/schemas/ChurchMembership'
+                  member:
+                    $ref: '#/components/schemas/Member'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -824,9 +817,9 @@ paths:
     post:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: Ban a user from the church (church ADMIN/SUPER_ADMIN)
+      summary: Ban a member (church SUPER_ADMIN)
       description: >
-        Marks the membership as banned and REJECTED. A banned user gets
+        Marks the member as banned and REJECTED. A banned member gets
         403 BANNED_FROM_CHURCH on any further `POST /join-requests`. Per-church.
       requestBody:
         required: true
@@ -840,15 +833,15 @@ paths:
                 banReason: { type: string, minLength: 1, maxLength: 500 }
       responses:
         '200':
-          description: User banned.
+          description: Member banned.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  membership:
-                    $ref: '#/components/schemas/ChurchMembership'
+                  member:
+                    $ref: '#/components/schemas/Member'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -858,8 +851,8 @@ paths:
     post:
       tags: [Join Requests]
       security: [{ bearerAuth: [] }]
-      summary: Unban a user from the church (church ADMIN/SUPER_ADMIN)
-      description: Reverses a ban so the user can submit join requests again.
+      summary: Unban a member (church SUPER_ADMIN)
+      description: Reverses a ban so the member can submit join requests again.
       requestBody:
         required: true
         content:
@@ -871,15 +864,15 @@ paths:
                 membershipId: { type: string, format: uuid }
       responses:
         '200':
-          description: User unbanned.
+          description: Member unbanned.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  membership:
-                    $ref: '#/components/schemas/ChurchMembership'
+                  member:
+                    $ref: '#/components/schemas/Member'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -973,9 +966,9 @@ paths:
       security: [{ bearerAuth: [] }]
       summary: Leave an approved church (member)
       description: >
-        Requires a MEMBER account. Deletes the member's APPROVED membership so
+        Requires a MEMBER account. Deletes the member's APPROVED Member record so
         they can apply to another church. Returns 404 NOT_A_MEMBER if the caller
-        is not a member, and 409 NOT_AN_ACTIVE_MEMBER if the membership is not
+        is not a member, and 409 NOT_AN_ACTIVE_MEMBER if the account is not
         APPROVED.
       parameters:
         - in: path
@@ -1014,34 +1007,30 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '200':
-          description: The church's admins.
+          description: The church's leadership.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   status: { type: string, example: success }
-                  admins:
+                  superAdmin:
+                    type: object
+                    description: The owning SuperAdmin.
+                    properties:
+                      id: { type: string, format: uuid }
+                      email: { type: string, format: email }
+                      fullName: { type: string, nullable: true }
+                  memberAdmins:
                     type: array
+                    description: Member-level ADMIN/SUPER_ADMIN accounts.
                     items:
                       type: object
                       properties:
                         id: { type: string, format: uuid }
                         email: { type: string, format: email }
-                        fullName: { type: string, nullable: true }
                         role: { $ref: '#/components/schemas/ChurchRole' }
-                        isActive: { type: boolean }
-                        loginProvider: { type: string }
-                        createdAt: { type: string, format: date-time }
-                        linkedUserId: { type: string, format: uuid, nullable: true }
-                        linkedUser:
-                          type: object
-                          nullable: true
-                          properties:
-                            id: { type: string, format: uuid }
-                            fullName: { type: string, nullable: true }
-                            email: { type: string }
-                            lastLogin: { type: string, format: date-time, nullable: true }
+                        isBanned: { type: boolean }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1055,9 +1044,8 @@ paths:
       security: [{ bearerAuth: [] }]
       summary: Delete a church
       description: >
-        SUPER_ADMIN only. Deletes the church and cascades memberships, admins,
-        service times and ministries. Orphaned member Users (no remaining
-        memberships and not linked to an Admin) are also removed.
+        SUPER_ADMIN only. Deletes the church and cascades its members, service
+        times and ministries.
       parameters:
         - in: path
           name: churchId
@@ -1087,9 +1075,9 @@ paths:
       summary: Initialize a Paystack subscription charge
       description: >
         Uses GET (as implemented). Generates a reference, stores a pending
-        Transaction, and returns an `authorizationUrl` to open for the payer.
+        ChurchTransaction, and returns an `authorizationUrl` to open for the payer.
         Duplicate-mount note: also available at `/api/v1/initialize`.
-        A user with an active subscription gets 409 ALREADY_PREMIUM.
+        A SuperAdmin whose church has an active subscription gets 409 ALREADY_PREMIUM.
       responses:
         '200':
           description: Paystack checkout URL.
@@ -1137,7 +1125,7 @@ paths:
                     type: object
                     properties:
                       transaction:
-                        $ref: '#/components/schemas/Transaction'
+                        $ref: '#/components/schemas/ChurchTransaction'
         '400':
           description: Not paid yet (PAYMENT_FAILED) or Paystack error.
           $ref: '#/components/responses/BadRequest'
@@ -1369,26 +1357,26 @@ components:
         occupation: { type: string, nullable: true }
         completedAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
-    ChurchMembership:
+    Member:
       type: object
       properties:
         id: { type: string, format: uuid }
         churchId: { type: string, format: uuid }
-        userId: { type: string, format: uuid }
+        email: { type: string, format: email }
         role: { $ref: '#/components/schemas/ChurchRole' }
         status: { $ref: '#/components/schemas/MembershipStatus' }
-        joinedAt: { type: string, format: date-time, nullable: true }
+        joinedAt: { type: string, format: date-time }
         rejectionReason: { type: string, nullable: true }
         isBanned: { type: boolean, default: false }
         bannedAt: { type: string, format: date-time, nullable: true }
         banReason: { type: string, nullable: true }
-        user:
+        church:
           type: object
           properties:
-            fullName: { type: string, nullable: true }
-            email: { type: string, format: email }
-            memberProfile: { $ref: '#/components/schemas/MemberProfile', nullable: true }
-    Transaction:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        memberProfile: { $ref: '#/components/schemas/MemberProfile', nullable: true }
+    ChurchTransaction:
       type: object
       properties:
         id: { type: string, format: uuid }

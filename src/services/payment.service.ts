@@ -22,7 +22,7 @@ interface PaystackVerifyResponse {
         amount: string;
         currency: string;
         metadata: {
-            userId: string,
+            superAdminId: string,
         },
         customer: {
             email: string,
@@ -39,15 +39,14 @@ export interface PaystackCancelResponse {
 class PaymentService {
 
     async initializePayment ({
-        userId, 
-        email, 
-        amount 
-    }: { userId: string, email: string, amount: string }) {
+        superAdminId,
+        email,
+    }: { superAdminId: string, email: string }) {
         const thirtyMinutesAgo = new Date(Date.now() -  30 * 60 * 1000);
 
-        const existingTransaction = await prisma.transaction.findFirst({
+        const existingTransaction = await prisma.churchTransaction.findFirst({
             where: {
-                userId: userId,
+                superAdminId: superAdminId,
                 status: 'pending',
                 createdAt: { gt: thirtyMinutesAgo }
             },
@@ -68,11 +67,11 @@ class PaymentService {
             },
             body: JSON.stringify({
                 email,
-                amount,
+                amount: env.SUBSCRIPTION_AMOUNT_KOBO,
                 plan: env.PAYSTACK_PLAN_CODE,
                 currency: "GHS",
                 metadata: {
-                    userId,
+                    superAdminId,
                 },
                 callback_url:`${env.FRONTEND_URL}/payment/verify`
             })
@@ -84,11 +83,11 @@ class PaymentService {
             throw new AppError(`Paystack error: ${data.message}`, 400, 'PAYSTACK_ERROR');
         };
 
-        await prisma.transaction.create({
+        await prisma.churchTransaction.create({
             data: {
-                userId: userId,
+                superAdminId: superAdminId,
                 reference: data.data!.reference,
-                amount: amount,
+                amount: env.SUBSCRIPTION_AMOUNT_KOBO,
                 authorizationUrl: data.data.authorization_url,
                 status: 'pending',
             },
@@ -119,9 +118,9 @@ class PaymentService {
             throw new AppError('Payment was not successful!', 400, 'PAYMENT_FAILED');
         };
 
-        const userId = data.data.metadata.userId;
+        const superAdminId = data.data.metadata.superAdminId;
 
-        const existingTransaction = await prisma.transaction.findUnique({
+        const existingTransaction = await prisma.churchTransaction.findUnique({
             where: {
                 reference: reference,
             },
@@ -135,21 +134,20 @@ class PaymentService {
             throw new AppError('Transaction already processed!', 404, 'TRANSACTION_ALREADY_PROCESSED');
         };
 
-        const [ updatedUser ] = await Promise.all([
-            prisma.user.update({
-                where: {
-                    id: userId,
-                },
+        const [updatedChurch] = await Promise.all([
+            prisma.church.updateMany({
+                where: { superAdminId },
                 data: {
-                    isPremium: true,
-                    premiumSince: new Date(),
-                    premiumExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-                }
+                    plan: 'PRO',
+                    planStartedAt: new Date(),
+                    planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+                    subscriptionProcessor: 'paystack',
+                },
             }),
 
-            await CacheService.invalidatePattern(cacheKeys.user(userId)),
+            CacheService.invalidatePattern(cacheKeys.user(superAdminId)),
 
-            prisma.transaction.update({
+            prisma.churchTransaction.update({
                 where: {
                     reference: reference,
                 },
@@ -160,18 +158,18 @@ class PaymentService {
         ]);
 
         return {
-            isPremium: updatedUser.isPremium,
-            premiuinSince: updatedUser.premiumSince,     
-            premiuimExpiry: updatedUser.premiumExpiry,  
+            planUpdated: updatedChurch.count > 0,
+            planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         };
     };
 
-    async cancelSubscription(userId: string) {
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
+    async cancelSubscription(superAdminId: string) {
+        const church = await prisma.church.findUnique({
+            where: { superAdminId },
+            select: { id: true, plan: true, subscriptionRef: true, subscriptionProcessor: true },
         });
 
-        if (!user?.subscriptionRef || user.subscriptionProcessor !== 'paystack') {
+        if (!church?.subscriptionRef || church.subscriptionProcessor !== 'paystack') {
             throw new AppError('No active subscription found', 404, 'NO_SUBSCRIPTION')
         };
 
@@ -183,7 +181,7 @@ class PaymentService {
             },
             body: JSON.stringify(
                 {
-                    code: user.subscriptionRef,
+                    code: church.subscriptionRef,
                     token: '',
                 }
             ),
@@ -195,23 +193,20 @@ class PaymentService {
             throw new AppError(`Paystack error: ${data.message}`, 400, 'PAYSTACK_ERROR')
         };
 
-        await CacheService.invalidatePattern(cacheKeys.user(userId));
+        await CacheService.invalidatePattern(cacheKeys.user(superAdminId));
 
-        const updatedUser = await prisma.user.update({
-            where: {
-                id: userId,
-            },
+        const updatedChurch = await prisma.church.update({
+            where: { superAdminId },
             data: {
-                isPremium: false,
-                premiumExpiry: new Date(),
+                plan: 'FREE',
+                planExpiresAt: new Date(),
                 subscriptionStatus: 'CANCELED',
             },
         });
 
         return {
-            isPremium: updatedUser.isPremium,
-            premiuinSince: updatedUser.premiumSince,     
-            premiuimExpiry: updatedUser.premiumExpiry,   
+            plan: updatedChurch.plan,
+            planExpiresAt: updatedChurch.planExpiresAt,
         };
     };
 };

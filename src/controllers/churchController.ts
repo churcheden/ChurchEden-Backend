@@ -6,8 +6,7 @@ import { wideLogger } from '../utils/wideLogger.js';
 import type { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { CacheService, cacheKeys } from '../utils/cache.js';
 
-// GET /api/v1/churches — public directory of registered churches, available to
-// any authenticated account. Optional ?q= searches by name/city/country/address.
+// GET /api/v1/churches — public directory of registered churches
 export const listChurches = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'list_churches');
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -46,9 +45,8 @@ export const listChurches = catchAsync(async (req: AuthenticatedRequest, res: Re
 });
 
 // POST /api/v1/churches/:churchId/leave
-// A member leaves an APPROVED church — their active membership is removed, and
-// they are free to apply to another church. Used by the mobile "change church"
-// flow. Guarded to MEMBER accounts only.
+// A member leaves a church — their Member record is deleted since
+// Member IS the membership (churchId is required).
 export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'leave_church');
     const userId = req.user?.id;
@@ -69,17 +67,17 @@ export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Res
     wideLogger.addCtx('user_id', userId);
     wideLogger.addCtx('church_id', churchId);
 
-    const membership = await prisma.churchMembership.findUnique({
-        where: { userId_churchId: { userId, churchId } },
+    const member = await prisma.member.findFirst({
+        where: { id: userId, churchId },
         select: { id: true, status: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('leave_church', 'not_a_member');
         throw new AppError('You are not a member of this church.', 404, 'NOT_A_MEMBER');
     }
 
-    if (membership.status !== 'APPROVED') {
+    if (member.status !== 'APPROVED') {
         wideLogger.addCtx('leave_church', 'not_active');
         throw new AppError(
             'Only an active membership can be left.',
@@ -88,7 +86,8 @@ export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Res
         );
     }
 
-    await prisma.churchMembership.delete({ where: { id: membership.id } });
+    // Deleting the Member record removes the membership entirely.
+    await prisma.member.delete({ where: { id: member.id } });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
@@ -100,13 +99,8 @@ export const leaveChurch = catchAsync(async (req: AuthenticatedRequest, res: Res
 });
 
 // DELETE /api/v1/churches/:churchId
-// Guarded by requireSuperAdmin — only the church's SUPER_ADMIN can delete it.
-//
-// The church and all cascading children (memberships, admins, service times,
-// ministries, etc.) are removed within a single transaction via the schema's
-// onDelete: Cascade relations. Afterward, member Users that ended up with no
-// church memberships and are not linked to any Admin are cleaned up too (they
-// lose their only church and would otherwise linger as empty accounts).
+// Guarded by requireSuperAdmin — only the church's SuperAdmin can delete it.
+// Church deletion cascades to Members, ServiceTimes, Ministries via schema.
 export const deleteChurch = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'delete_church');
     const churchId = (req as AuthenticatedRequest & { churchId?: string }).churchId ?? (req.params as { churchId?: string }).churchId;
@@ -126,41 +120,11 @@ export const deleteChurch = catchAsync(async (req: AuthenticatedRequest, res: Re
         throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
     }
 
-    // Capture the member Users before the church deletion cascades memberships
-    // away, so we can decide whether any of them are now orphaned.
-    const memberUserIds = await prisma.churchMembership.findMany({
-        where: { churchId },
-        select: { userId: true },
-    });
-    const userIds = [...new Set(memberUserIds.map((m) => m.userId))];
-
+    // Church deletion cascades to Members (which cascades to MemberProfile,
+    // MemberRefreshTokens, ChurchRequests), ServiceTimes, and Ministries.
     await prisma.$transaction(async (tx) => {
         await tx.church.delete({ where: { id: churchId } });
     });
-
-    // Conditional cleanup: delete member Users who have no remaining church
-    // memberships and are not behind an Admin row (admins are a separate login
-    // identity and may still be active elsewhere).
-    if (userIds.length > 0) {
-        const linkedToAdmin = new Set(
-            (await prisma.admin.findMany({
-                where: { linkedUserId: { in: userIds } },
-                select: { linkedUserId: true },
-            })).map((a) => a.linkedUserId),
-        );
-
-        for (const userId of userIds) {
-            if (linkedToAdmin.has(userId)) continue;
-
-            const remaining = await prisma.churchMembership.count({
-                where: { userId },
-            });
-            if (remaining === 0) {
-                await prisma.user.delete({ where: { id: userId } });
-                wideLogger.addCtx(`orphaned_user_${userId}`, 'deleted');
-            }
-        }
-    }
 
     await CacheService.invalidatePattern(`church:${churchId}:*`);
 
@@ -172,8 +136,8 @@ export const deleteChurch = catchAsync(async (req: AuthenticatedRequest, res: Re
 });
 
 // GET /api/v1/churches/:churchId/admins
-// Guarded to ADMIN/SUPER_ADMIN of that church. Returns the church's leadership
-// from the Admin table (admin privileges never live on ChurchMembership rows).
+// Returns the SuperAdmin who owns the church, plus any Members with
+// ADMIN or SUPER_ADMIN role in that church.
 export const getChurchAdmins = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'get_church_admins');
     const churchId = (req as AuthenticatedRequest & { churchId?: string }).churchId ?? (req.params as { churchId?: string }).churchId;
@@ -184,25 +148,48 @@ export const getChurchAdmins = catchAsync(async (req: AuthenticatedRequest, res:
 
     wideLogger.addCtx('church_id', churchId);
 
-    const admins = await prisma.admin.findMany({
-        where: { churchId },
+    const church = await prisma.church.findUnique({
+        where: { id: churchId },
+        select: {
+            superAdmin: {
+                select: {
+                    id: true,
+                    email: true,
+                    fullName: true,
+                    isVerified: true,
+                    loginProvider: true,
+                    createdAt: true,
+                },
+            },
+        },
+    });
+
+    if (!church) {
+        throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
+    }
+
+    const memberAdmins = await prisma.member.findMany({
+        where: {
+            churchId,
+            role: { in: ['ADMIN', 'SUPER_ADMIN'] },
+        },
         select: {
             id: true,
             email: true,
-            fullName: true,
+            status: true,
             role: true,
-            isActive: true,
-            loginProvider: true,
-            createdAt: true,
-            linkedUserId: true,
-            linkedUser: { select: { id: true, fullName: true, email: true, lastLogin: true } },
+            joinedAt: true,
+            memberProfile: {
+                select: { fullName: true, profilePhotoUrl: true },
+            },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: { joinedAt: 'asc' },
     });
 
     wideLogger.addCtx('get_church_admins_result', 'success');
     return res.status(200).json({
         status: 'success',
-        admins,
+        superAdmin: church.superAdmin,
+        memberAdmins,
     });
 });

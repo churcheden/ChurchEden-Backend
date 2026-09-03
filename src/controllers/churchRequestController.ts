@@ -11,8 +11,8 @@ export const createChurchRequest = catchAsync(async (req: AuthenticatedRequest, 
     wideLogger.addCtx('action', 'create_church_request');
     const userId = req.user?.id;
 
-    if (!userId) {
-        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    if (!userId || req.user?.accountType !== 'MEMBER') {
+        throw new AppError('Only church members can submit church requests.', 401, 'UNAUTHORIZED');
     }
 
     wideLogger.addCtx('user_id', userId);
@@ -20,8 +20,6 @@ export const createChurchRequest = catchAsync(async (req: AuthenticatedRequest, 
 
     let phoneContact: string | null = null;
     if (data.phoneContact) {
-        // Normalize to E.164 using the country code when provided, so local
-        // ("0544053900") and international ("+233 ...") formats are accepted.
         phoneContact = normalizePhoneToE164(data.phoneContact, data.phoneCountryCode);
         if (!phoneContact) {
             throw new AppError('Invalid phone number.', 400, 'INVALID_PHONE');

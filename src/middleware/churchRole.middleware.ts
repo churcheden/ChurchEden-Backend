@@ -7,13 +7,10 @@ import type { AuthenticatedRequest } from './auth.middleware.js';
 export type ChurchIdResolver = (req: AuthenticatedRequest) => Promise<string>;
 
 /**
- * Guards a route so the authenticated account must be an active Admin for the
- * resolved church holding one of the allowed roles. This replaces the old
- * check against ChurchMembership.role — admin privileges now live entirely in
- * the Admin table, never in a member's ChurchMembership row.
- *
- * Only ADMIN-accountType tokens (JWT accountType === 'ADMIN') can pass; plain
- * members never hold admin roles. Throws 403 otherwise.
+ * Guards a route so the authenticated account must be the SuperAdmin of the
+ * resolved church holding one of the allowed roles. In the new schema, the
+ * SuperAdmin is the church owner (1:1 via Church.superAdminId). Only ADMIN
+ * accountType tokens (JWT accountType === 'ADMIN') can pass.
  */
 export const requireChurchRole = (roles: ChurchRole[], resolveChurchId: ChurchIdResolver) => {
     return async (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
@@ -25,16 +22,15 @@ export const requireChurchRole = (roles: ChurchRole[], resolveChurchId: ChurchId
             const adminId = req.user.adminId;
             const churchId = await resolveChurchId(req);
 
-            const admin = await prisma.admin.findFirst({
-                where: { id: adminId, churchId, isActive: true },
-                select: { id: true, role: true },
+            const church = await prisma.church.findUnique({
+                where: { id: churchId },
+                select: { superAdminId: true },
             });
 
-            if (!admin || !roles.includes(admin.role)) {
+            if (!church || church.superAdminId !== adminId) {
                 throw new AppError('You do not have permission to perform this action.', 403, 'FORBIDDEN');
             }
 
-            // Attach the resolved churchId so downstream handlers don't re-resolve.
             (req as AuthenticatedRequest & { churchId?: string }).churchId = churchId;
             next();
         } catch (error) {
@@ -44,9 +40,8 @@ export const requireChurchRole = (roles: ChurchRole[], resolveChurchId: ChurchId
 };
 
 /**
- * Guards a route to SUPER_ADMIN accounts only (either in the Admin table for a
- * given church via requireChurchRole(['SUPER_ADMIN'], ...), or globally for
- * routes that resolve the church from the JWT's own church context).
+ * Guards a route to SUPER_ADMIN accounts only — the authenticated SuperAdmin
+ * must own the resolved church via Church.superAdminId.
  */
 export const requireSuperAdmin = (resolveChurchId: ChurchIdResolver) =>
     requireChurchRole(['SUPER_ADMIN'], resolveChurchId);

@@ -31,8 +31,8 @@ const LOGO_MIME_EXT: Record<string, string> = {
 const REQUIRED_STEP_1 = ['firstName', 'lastName', 'churchName', 'denomination', 'congregationSize'] as const;
 const REQUIRED_STEP_2 = ['country', 'city', 'address', 'phone', 'email', 'primaryLanguage', 'timeZone'] as const;
 
-const getDraftOrThrow = async (userId: string): Promise<ChurchOnboardingDraft> => {
-    const draft = await CacheService.get<ChurchOnboardingDraft>(cacheKeys.churchOnboardingDraft(userId));
+const getDraftOrThrow = async (superAdminId: string): Promise<ChurchOnboardingDraft> => {
+    const draft = await CacheService.get<ChurchOnboardingDraft>(cacheKeys.churchOnboardingDraft(superAdminId));
     if (!draft) {
         throw new AppError('No church onboarding draft found. Please start from Step 1.', 404, 'DRAFT_NOT_FOUND');
     }
@@ -52,7 +52,7 @@ const parseChurchPhone = (phone: string, country: string): string => {
     return parsed.format('E.164');
 };
 
-const uploadChurchLogo = async (userId: string, file: Express.Multer.File): Promise<string> => {
+const uploadChurchLogo = async (superAdminId: string, file: Express.Multer.File): Promise<string> => {
     const ext = LOGO_MIME_EXT[file.mimetype];
     if (!ext) {
         throw new AppError('Church logo must be an SVG, PNG or JPG image.', 400, 'INVALID_LOGO');
@@ -61,7 +61,7 @@ const uploadChurchLogo = async (userId: string, file: Express.Multer.File): Prom
         throw new AppError('Church logo must be 5MB or smaller.', 400, 'LOGO_TOO_LARGE');
     }
 
-    const key = `church-logos/${userId}/${randomUUID()}.${ext}`;
+    const key = `church-logos/${superAdminId}/${randomUUID()}.${ext}`;
 
     await cloudflare.send(new PutObjectCommand({
         Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
@@ -229,15 +229,15 @@ export const getOnboardingDraft = catchAsync(async (req: AuthenticatedRequest, r
 // POST /api/v1/onboarding/church/complete
 export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'complete_church_onboarding');
-    const userId = req.user?.id;
+    const superAdminId = req.user?.id;
 
-    if (!userId) {
+    if (!superAdminId || req.user?.accountType !== 'ADMIN') {
         throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
     }
 
-    wideLogger.addCtx('user_id', userId);
+    wideLogger.addCtx('user_id', superAdminId);
 
-    const key = cacheKeys.churchOnboardingDraft(userId);
+    const key = cacheKeys.churchOnboardingDraft(superAdminId);
     const draft = await CacheService.get<ChurchOnboardingDraft>(key);
 
     if (!draft) {
@@ -306,9 +306,11 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
 
     const fullName = `${draft.firstName} ${draft.lastName}`.trim();
 
-    const { church, membership, admin } = await prisma.$transaction(async (tx) => {
-        const church = await tx.church.create({
+    const church = await prisma.$transaction(async (tx) => {
+        // First establish the church with superAdminId.
+        const created = await tx.church.create({
             data: {
+                superAdminId,
                 name: draft.churchName!,
                 denomination: draft.denomination!,
                 congregationSize: draft.congregationSize!,
@@ -327,7 +329,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
         if (draft.serviceTimes!.length > 0) {
             await tx.serviceTime.createMany({
                 data: draft.serviceTimes!.map((serviceTime) => ({
-                    churchId: church.id,
+                    churchId: created.id,
                     label: serviceTime.label,
                     dayOfWeek: serviceTime.dayOfWeek,
                     time: serviceTime.time,
@@ -338,7 +340,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
         if (resolvedMinistries.length > 0) {
             await tx.churchMinistry.createMany({
                 data: resolvedMinistries.map((ministry) => ({
-                    churchId: church.id,
+                    churchId: created.id,
                     name: ministry.name,
                     type: ministry.type,
                     description: ministry.description,
@@ -348,45 +350,22 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             });
         }
 
-        const membership = await tx.churchMembership.create({
-            data: {
-                userId,
-                churchId: church.id,
-                role: 'MEMBER',
-                status: 'APPROVED',
-            },
-        });
-
-        // The founding user becomes the church's SUPER_ADMIN via a dedicated
-        // Admin row, linked back to their member User. Their member history
-        // stays untouched — the Admin is a separate login identity.
-        const admin = await tx.admin.create({
-            data: {
-                email: req.user!.email,
-                fullName,
-                churchId: church.id,
-                role: 'SUPER_ADMIN',
-                linkedUserId: userId,
-            },
-        });
-
-        await tx.user.update({
-            where: { id: userId },
+        // The founding SuperAdmin is the church owner — no separate Admin row needed.
+        await tx.superAdmin.update({
+            where: { id: superAdminId },
             data: { fullName },
         });
 
-        return { church, membership, admin };
+        return created;
     });
 
     await CacheService.delete(key);
-    await CacheService.delete(cacheKeys.userMe(userId));
+    await CacheService.delete(cacheKeys.userMe(`admin:${superAdminId}`));
 
     wideLogger.addCtx('complete_church_onboarding', 'success');
     return res.status(200).json({
         status: 'success',
         message: 'Church created successfully!',
         church,
-        membership,
-        admin,
     });
 });

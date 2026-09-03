@@ -42,4 +42,7 @@ export const googleTokenSchema = z.object({
     // Which identity table to authenticate against. Defaults to MEMBER; pass
     // 'ADMIN' when the mobile app is signing in an admin account.
     accountType: z.enum(['ADMIN', 'MEMBER']).default('MEMBER'),
+    // Required for MEMBER account creation via Google — the Member model
+    // requires a churchId. Ignored for ADMIN accounts.
+    churchId: z.uuid('Invalid church id').optional(),
 });

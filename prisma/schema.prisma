@@ -58,7 +58,13 @@ enum ChurchLanguage {
   SPANISH
 }
 
-model User {
+enum ChurchPlan {
+  FREE
+  PRO
+  MAX
+}
+
+model SuperAdmin {
   id       String  @id @default(uuid())
   email    String  @unique
   password String? // optional: Google-login users never set one
@@ -75,145 +81,21 @@ model User {
 
   lastLogin DateTime?
 
-  isPremium     Boolean   @default(false)
-  premiumSince  DateTime?
-  premiumExpiry DateTime?
-
-  // processor-agnostic — was Paystack-specific
-  subscriptionProcessor String? // e.g. "stripe" | "paypal" | "moolre"
-  subscriptionRef       String? // that processor's subscription/customer id
-  subscriptionStatus    SubscriptionStatus?
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberProfile     MemberProfile?
-  transactions      Transaction[]
-  refreshTokens     RefreshToken[]
-  churchMemberships ChurchMembership[]
-  churchRequests    ChurchRequest[]
-  linkedAdmin       Admin?
+  church        Church?
+  refreshTokens SuperAdminRefreshToken[]
+  transactions  ChurchTransaction[]
 
-  @@index([isPremium])
-  @@map("Users")
-}
-
-model MemberProfile {
-  id     String @id @default(uuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  profilePhotoUrl String? // R2 object URL, optional
-  fullName        String // duplicates User.fullName intentionally — edited independently of the Google-sourced value
-  dateOfBirth     DateTime
-  gender          Gender
-  phoneNumber     String // E.164 format, e.g. +233241234567
-  contactEmail    String // separate from User.email (login email) — the "Contact Email Address" field
-  city            String
-  address         String
-  maritalStatus   MaritalStatus
-  occupation      String?
-
-  completedAt DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("MemberProfiles")
-}
-
-model RefreshToken {
-  id         String    @id @default(uuid())
-  userId     String
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash  String    @unique
-  deviceInfo String?
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-
-  @@index([userId])
-  @@map("RefreshTokens")
-}
-
-// Admin — the home for every church admin's login credentials, completely
-// separate from the User table that regular members use. A member who gets
-// promoted to admin receives a NEW Admin row that points back to their
-// original User via linkedUserId, leaving their member history untouched.
-model Admin {
-  id            String        @id @default(uuid())
-  email         String        @unique
-  password      String?
-  googleId      String?       @unique
-  loginProvider LoginProvider @default(EMAIL)
-  isVerified    Boolean       @default(false)
-  fullName      String?
-
-  churchId String
-  church   Church     @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  // NOTE: This role field is intentionally NOT restricted to ADMIN/SUPER_ADMIN
-  // at the schema level. Prisma enums cannot be subset-restricted per model —
-  // the same ChurchRole enum is shared with ChurchMembership (which still
-  // allows MEMBER). The "admin roles only" constraint is enforced in Zod
-  // validation / controller logic when an Admin row is created, not here.
-  role     ChurchRole
-
-  linkedUserId String? @unique
-  linkedUser   User?   @relation(fields: [linkedUserId], references: [id], onDelete: SetNull)
-
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  adminRefreshTokens  AdminRefreshToken[]
-  reviewedMemberships ChurchMembership[]
-
-  @@map("Admins")
-}
-
-model AdminRefreshToken {
-  id        String    @id @default(uuid())
-  adminId   String
-  admin     Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
-
-  @@index([adminId])
-  @@map("AdminRefreshTokens")
-}
-
-model ChurchMembership {
-  id       String     @id @default(uuid())
-  userId   String
-  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  churchId String
-  church   Church     @relation(fields: [churchId], references: [id], onDelete: Cascade)
-  role     ChurchRole @default(MEMBER)
-
-  status          MembershipStatus @default(PENDING) // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
-  rejectionReason String? // set when an admin rejects a join request
-  joinedAt        DateTime         @default(now()) // also serves as the join-request submission timestamp
-
-  // Manual admin ban: a user banned from a church can no longer submit join requests.
-  isBanned  Boolean   @default(false)
-  bannedAt  DateTime?
-  banReason String?
-
-  // The admin who acted on this request (approved/rejected/banned) and when.
-  reviewedBy      String?
-  reviewedByAdmin Admin?    @relation(fields: [reviewedBy], references: [id], onDelete: SetNull)
-  reviewedAt      DateTime?
-
-  @@unique([userId, churchId]) // a user can't join the same church twice
-  @@index([churchId, status]) // admin Join Requests list: requests for a church filtered by status
-  @@index([churchId, isBanned]) // admin "banned users" list for a church
-  @@map("ChurchMemberships")
+  @@map("SuperAdmins")
 }
 
 model Church {
-  id               String           @id @default(uuid())
-  name             String
+  id           String     @id @default(uuid())
+  superAdminId String     @unique
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+  name         String
   denomination     String // free text — accepts preset or custom value identically
   congregationSize CongregationSize
   foundedYear      Int?
@@ -227,14 +109,19 @@ model Church {
   timeZone        String // IANA tz string, e.g. "Africa/Accra"
 
   logoUrl String? // R2 object URL
+  plan                   ChurchPlan @default(FREE)
+  planStartedAt          DateTime?
+  planExpiresAt          DateTime?
+  subscriptionProcessor  String?  // "stripe" | "paypal"
+  subscriptionRef        String?
+  subscriptionStatus     SubscriptionStatus?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  memberships  ChurchMembership[]
+  members      Member[]
   serviceTimes ServiceTime[]
   ministries   ChurchMinistry[]
-  admins       Admin[]
 
   @@map("Churches")
 }
@@ -267,20 +154,82 @@ model ChurchMinistry {
   @@map("ChurchMinistries")
 }
 
-model Transaction {
-  id               String   @id @default(uuid())
-  userId           String
-  reference        String   @unique
-  amount           Decimal
-  status           String
-  authorizationUrl String
-  createdAt        DateTime @default(now())
+model Member {
+  id       String  @id @default(uuid())
+  email    String  @unique
+  password String? // optional: Google-login users never set one
+  googleId   String?        @unique
+  isVerified Boolean        @default(false) // Checks phone number verification
+  role       ChurchRole     @default(MEMBER) // A member can be elevated to an Admin rank by only the Super Admin
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  churchId String
+  church   Church @relation(fields: [churchId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([reference])
-  @@map("Transactions")
+  status          MembershipStatus @default(PENDING) // PENDING | APPROVED | REJECTED — matches the "Pending Approval" onboarding flow
+  rejectionReason String? // set when an admin rejects a join request
+  joinedAt        DateTime         @default(now()) // also serves as the join-request submission timestamp
+
+  // Manual admin ban: a user banned from a church can no longer submit join requests.
+  isBanned  Boolean   @default(false)
+  bannedAt  DateTime?
+  banReason String?
+
+  memberProfile   MemberProfile?
+  refreshTokens   MemberRefreshToken[]
+  churchRequests  ChurchRequest[]
+
+  @@index([churchId])
+  @@map("Members")
+}
+
+model MemberProfile {
+  id       String @id @default(uuid())
+  memberId String @unique
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  profilePhotoUrl String? // R2 object URL, optional
+  fullName        String // duplicates User.fullName intentionally — edited independently of the Google-sourced value
+  dateOfBirth     DateTime
+  gender          Gender
+  phoneNumber     String // E.164 format, e.g. +233241234567
+  contactEmail    String // email used to create account will be used as contact email for users
+  city            String
+  address         String
+  maritalStatus   MaritalStatus
+  occupation      String?
+
+  completedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("MembersProfile")
+}
+
+model SuperAdminRefreshToken {
+  id           String     @id @default(uuid())
+  superAdminId String
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+  tokenHash    String     @unique
+  deviceInfo   String?
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime   @default(now())
+
+  @@index([superAdminId])
+  @@map("SuperAdminRefreshTokens")
+}
+
+model MemberRefreshToken {
+  id         String    @id @default(uuid())
+  memberId   String
+  member     Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  deviceInfo String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([memberId])
+  @@map("MemberRefreshTokens")
 }
 
 model ChurchRequest {
@@ -291,9 +240,24 @@ model ChurchRequest {
   phoneContact  String?
   emailContact  String?
   requestedById String
-  requestedBy   User     @relation(fields: [requestedById], references: [id], onDelete: Cascade)
+  requestedBy   Member   @relation(fields: [requestedById], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
 
   @@index([requestedById])
   @@map("ChurchRequests")
+}
+
+model ChurchTransaction {
+  id               String     @id @default(uuid())
+  superAdminId     String
+  superAdmin       SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+  reference        String     @unique
+  amount           Decimal
+  status           String
+  authorizationUrl String
+  createdAt        DateTime   @default(now())
+
+  @@index([superAdminId])
+  @@index([reference])
+  @@map("ChurchTransactions")
 }

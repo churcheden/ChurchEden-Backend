@@ -51,6 +51,10 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
         throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
     };
 
+    if (req.user?.accountType !== 'MEMBER') {
+        throw new AppError('Only church members can complete a profile.', 403, 'FORBIDDEN');
+    }
+
     wideLogger.addCtx('user_id', userId);
 
     const data = req.body as CompleteProfileInput;
@@ -76,40 +80,34 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
         ? await uploadProfilePhoto(userId, req.file)
         : undefined;
 
-    const [profile] = await prisma.$transaction([
-        prisma.memberProfile.upsert({
-            where: { userId },
-            create: {
-                userId,
-                fullName: data.fullName,
-                dateOfBirth: data.dateOfBirth,
-                gender: data.gender,
-                phoneNumber: normalizedPhone,
-                contactEmail: data.contactEmail,
-                city: data.city,
-                address: data.address,
-                maritalStatus: data.maritalStatus,
-                occupation: data.occupation ?? null,
-                ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
-            },
-            update: {
-                fullName: data.fullName,
-                dateOfBirth: data.dateOfBirth,
-                gender: data.gender,
-                phoneNumber: normalizedPhone,
-                contactEmail: data.contactEmail,
-                city: data.city,
-                address: data.address,
-                maritalStatus: data.maritalStatus,
-                occupation: data.occupation ?? null,
-                ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
-            },
-        }),
-        prisma.user.update({
-            where: { id: userId },
-            data: { fullName: data.fullName },
-        }),
-    ]);
+    const profile = await prisma.memberProfile.upsert({
+        where: { memberId: userId },
+        create: {
+            memberId: userId,
+            fullName: data.fullName,
+            dateOfBirth: data.dateOfBirth,
+            gender: data.gender,
+            phoneNumber: normalizedPhone,
+            contactEmail: data.contactEmail,
+            city: data.city,
+            address: data.address,
+            maritalStatus: data.maritalStatus,
+            occupation: data.occupation ?? null,
+            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+        },
+        update: {
+            fullName: data.fullName,
+            dateOfBirth: data.dateOfBirth,
+            gender: data.gender,
+            phoneNumber: normalizedPhone,
+            contactEmail: data.contactEmail,
+            city: data.city,
+            address: data.address,
+            maritalStatus: data.maritalStatus,
+            occupation: data.occupation ?? null,
+            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+        },
+    });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
@@ -133,7 +131,7 @@ export const getProfile = catchAsync(async(req: AuthenticatedRequest, res: Respo
     wideLogger.addCtx('user_id', userId);
 
     const profile = await prisma.memberProfile.findUnique({
-        where: { userId },
+        where: { memberId: userId },
     });
 
     if(!profile) {

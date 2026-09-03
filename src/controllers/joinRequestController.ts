@@ -15,33 +15,23 @@ import type {
     UnbanUserInput,
 } from '../schema/join.schema.js';
 
-const ADMIN_ROLES: ChurchRole[] = [ChurchRole.ADMIN, ChurchRole.SUPER_ADMIN];
-
-// The churches the authenticated account administers — now sourced from the
-// Admin table, since admin privileges no longer live on ChurchMembership.
-const getManagedChurchIds = async (adminId: string): Promise<string[]> => {
-    const admins = await prisma.admin.findMany({
-        where: { id: adminId, isActive: true },
-        select: { churchId: true },
+// The church the authenticated SuperAdmin manages — via Church.superAdminId.
+const getManagedChurchId = async (superAdminId: string): Promise<string | null> => {
+    const church = await prisma.church.findUnique({
+        where: { superAdminId },
+        select: { id: true },
     });
-    return admins.map((a) => a.churchId);
+    return church?.id ?? null;
 };
 
-const MEMBERSHIP_INCLUDE = {
-    user: {
+const MEMBER_INCLUDE = {
+    memberProfile: {
         select: {
-            id: true,
-            email: true,
+            profilePhotoUrl: true,
             fullName: true,
-            memberProfile: {
-                select: {
-                    profilePhotoUrl: true,
-                    fullName: true,
-                    contactEmail: true,
-                    phoneNumber: true,
-                    city: true,
-                },
-            },
+            contactEmail: true,
+            phoneNumber: true,
+            city: true,
         },
     },
     church: {
@@ -50,13 +40,15 @@ const MEMBERSHIP_INCLUDE = {
 };
 
 // POST /api/v1/join-requests
-// A member requests to join a church. Existing REJECTED rows are reset to PENDING
-// so the member can re-apply without creating a duplicate membership row.
+// A member requests to join a church. The Member record is created here
+// (with email from the JWT, churchId from the request body). Existing
+// REJECTED rows are reset to PENDING so the member can re-apply.
 export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'submit_join_request');
     const userId = req.user?.id;
+    const userEmail = req.user?.email;
 
-    if (!userId) {
+    if (!userId || !userEmail) {
         throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
     }
 
@@ -74,62 +66,91 @@ export const submitJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
         throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
     }
 
-    const existing = await prisma.churchMembership.findUnique({
-        where: { userId_churchId: { userId, churchId } },
-        select: { id: true, status: true, isBanned: true, banReason: true },
+    // Check if a Member record already exists for this email (email is unique).
+    const existing = await prisma.member.findUnique({
+        where: { email: userEmail },
+        select: { id: true, churchId: true, status: true, isBanned: true, banReason: true },
     });
 
-    if (existing?.isBanned) {
-        wideLogger.addCtx('submit_join_request', 'banned');
-        throw new AppError(
-            'You are banned from joining this church.',
-            403,
-            'BANNED_FROM_CHURCH',
-        );
-    }
-
-    if (existing?.status === 'APPROVED') {
-        wideLogger.addCtx('submit_join_request', 'already_member');
-        throw new AppError('You are already a member of this church.', 409, 'ALREADY_MEMBER');
-    }
-
-    if (existing?.status === 'PENDING') {
-        wideLogger.addCtx('submit_join_request', 'already_pending');
-        throw new AppError('You already have a pending request to join this church.', 409, 'ALREADY_PENDING');
-    }
-
-    let membership;
-    let created = false;
-
     if (existing) {
-        // REJECTED → the member is re-applying
-        membership = await prisma.churchMembership.update({
-            where: { id: existing.id },
-            data: { status: 'PENDING', rejectionReason: null, joinedAt: new Date() },
-            include: MEMBERSHIP_INCLUDE,
-        });
-    } else {
-        created = true;
-        membership = await prisma.churchMembership.create({
-            data: { userId, churchId },
-            include: MEMBERSHIP_INCLUDE,
+        if (existing.isBanned) {
+            wideLogger.addCtx('submit_join_request', 'banned');
+            throw new AppError(
+                'You are banned from joining this church.',
+                403,
+                'BANNED_FROM_CHURCH',
+            );
+        }
+
+        if (existing.churchId === churchId && existing.status === 'APPROVED') {
+            wideLogger.addCtx('submit_join_request', 'already_member');
+            throw new AppError('You are already a member of this church.', 409, 'ALREADY_MEMBER');
+        }
+
+        if (existing.churchId === churchId && existing.status === 'PENDING') {
+            wideLogger.addCtx('submit_join_request', 'already_pending');
+            throw new AppError('You already have a pending request to join this church.', 409, 'ALREADY_PENDING');
+        }
+
+        // If the member is in a different church, they must leave first.
+        if (existing.churchId !== churchId && existing.status === 'APPROVED') {
+            throw new AppError(
+                'You are already a member of another church. Please leave your current church first.',
+                409,
+                'ALREADY_MEMBER_ANOTHER_CHURCH',
+            );
+        }
+
+        // REJECTED or PENDING in a different church → update to new church
+        let member;
+        let created = false;
+
+        if (existing.status === 'REJECTED' && existing.churchId === churchId) {
+            member = await prisma.member.update({
+                where: { id: existing.id },
+                data: { status: 'PENDING', rejectionReason: null, churchId, joinedAt: new Date() },
+                include: MEMBER_INCLUDE,
+            });
+        } else {
+            // Delete old record and create new one for different church
+            await prisma.member.delete({ where: { id: existing.id } });
+            created = true;
+            member = await prisma.member.create({
+                data: { email: userEmail, churchId, isVerified: true },
+                include: MEMBER_INCLUDE,
+            });
+        }
+
+        await CacheService.delete(cacheKeys.userMe(userId));
+
+        wideLogger.addCtx('submit_join_request', 'success');
+        return res.status(created ? 201 : 200).json({
+            status: 'success',
+            message: 'Join request submitted successfully!',
+            member,
         });
     }
+
+    // New member — create Member record with churchId
+    const member = await prisma.member.create({
+        data: {
+            email: userEmail,
+            churchId,
+        },
+        include: MEMBER_INCLUDE,
+    });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
     wideLogger.addCtx('submit_join_request', 'success');
-    return res.status(created ? 201 : 200).json({
+    return res.status(201).json({
         status: 'success',
         message: 'Join request submitted successfully!',
-        membership,
+        member,
     });
 });
 
 // POST /api/v1/join-requests/cancel
-// A member withdraws their own PENDING join request. Deleting the row removes
-// it from the church admin dashboard (which lists PENDING requests) so the
-// member can then apply to a different church without leaving a dangling entry.
 export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'cancel_join_request');
     const userId = req.user?.id;
@@ -144,24 +165,17 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 
     wideLogger.addCtx('user_id', userId);
 
-    const { membershipId } = req.body as CancelJoinRequestInput;
-
-    const membership = await prisma.churchMembership.findUnique({
-        where: { id: membershipId },
-        select: { id: true, userId: true, status: true },
+    const member = await prisma.member.findUnique({
+        where: { id: userId },
+        select: { id: true, status: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('cancel_join_request', 'request_not_found');
-        throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
+        throw new AppError('Member not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
-    if (membership.userId !== userId) {
-        wideLogger.addCtx('cancel_join_request', 'not_owner');
-        throw new AppError('You cannot cancel a join request you did not submit.', 403, 'FORBIDDEN');
-    }
-
-    if (membership.status !== 'PENDING') {
+    if (member.status !== 'PENDING') {
         wideLogger.addCtx('cancel_join_request', 'not_pending');
         throw new AppError(
             'Only a pending join request can be cancelled.',
@@ -170,7 +184,7 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
         );
     }
 
-    await prisma.churchMembership.delete({ where: { id: membership.id } });
+    await prisma.member.delete({ where: { id: member.id } });
 
     await CacheService.delete(cacheKeys.userMe(userId));
 
@@ -182,8 +196,8 @@ export const cancelJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 });
 
 // GET /api/v1/join-requests
-// Admin-only. Lists join requests across all churches the requester administers;
-// an optional ?churchId= narrows the list to a single church they administer.
+// Admin-only. Lists join requests (Members with PENDING status) across the
+// church the SuperAdmin administers.
 export const getJoinRequests = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'get_join_requests');
     if (req.user?.accountType !== 'ADMIN' || !req.user.id) {
@@ -192,28 +206,28 @@ export const getJoinRequests = catchAsync(async (req: AuthenticatedRequest, res:
     const adminId = req.user.id;
     wideLogger.addCtx('admin_id', adminId);
 
-    const managedIds = await getManagedChurchIds(adminId);
+    const managedId = await getManagedChurchId(adminId);
 
-    if (managedIds.length === 0) {
+    if (!managedId) {
         wideLogger.addCtx('get_join_requests', 'not_admin');
         throw new AppError('You need to be a church administrator to view join requests.', 403, 'FORBIDDEN');
     }
 
     const query = req.query as { status?: MembershipStatus; churchId?: string };
 
-    if (query.churchId && !managedIds.includes(query.churchId)) {
+    if (query.churchId && query.churchId !== managedId) {
         wideLogger.addCtx('get_join_requests', 'church_forbidden');
         throw new AppError('You do not have permission to view join requests for this church.', 403, 'FORBIDDEN');
     }
 
     const status = query.status || 'PENDING';
 
-    const requests = await prisma.churchMembership.findMany({
+    const requests = await prisma.member.findMany({
         where: {
-            churchId: query.churchId ?? { in: managedIds },
+            churchId: managedId,
             status,
         },
-        include: MEMBERSHIP_INCLUDE,
+        include: MEMBER_INCLUDE,
         orderBy: { joinedAt: 'desc' },
     });
 
@@ -237,18 +251,17 @@ export const approveJoinRequest = catchAsync(async (req: AuthenticatedRequest, r
 
     const { membershipId } = req.body as ApproveJoinRequestInput;
 
-    const membership = await prisma.churchMembership.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id: membershipId },
-        select: { id: true, userId: true, status: true },
+        select: { id: true, status: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('approve_join_request', 'request_not_found');
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
-    if (membership.status === 'APPROVED') {
-        // Idempotent — safe against double-clicks
+    if (member.status === 'APPROVED') {
         wideLogger.addCtx('approve_join_request', 'already_approved');
         return res.status(200).json({
             status: 'success',
@@ -256,20 +269,19 @@ export const approveJoinRequest = catchAsync(async (req: AuthenticatedRequest, r
         });
     }
 
-    const updated = await prisma.churchMembership.update({
-        where: { id: membership.id },
-        data: { status: 'APPROVED', rejectionReason: null, reviewedBy: userId, reviewedAt: new Date() },
-        include: MEMBERSHIP_INCLUDE,
+    const updated = await prisma.member.update({
+        where: { id: member.id },
+        data: { status: 'APPROVED', rejectionReason: null },
+        include: MEMBER_INCLUDE,
     });
 
-    await CacheService.delete(cacheKeys.userMe(membership.userId));
+    await CacheService.delete(cacheKeys.userMe(member.id));
 
     wideLogger.addCtx('approve_join_request', 'success');
-    wideLogger.addCtx('approve_requester_id', membership.userId);
     return res.status(200).json({
         status: 'success',
         message: 'Join request approved successfully!',
-        membership: updated,
+        member: updated,
     });
 });
 
@@ -286,37 +298,35 @@ export const rejectJoinRequest = catchAsync(async (req: AuthenticatedRequest, re
 
     const input = req.body as RejectJoinRequestInput;
 
-    const membership = await prisma.churchMembership.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id: input.membershipId },
-        select: { id: true, userId: true, status: true },
+        select: { id: true, status: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('reject_join_request', 'request_not_found');
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
     const rejectionReason = input.rejectionReason?.trim() || null;
 
-    const updated = await prisma.churchMembership.update({
-        where: { id: membership.id },
-        data: { status: 'REJECTED', rejectionReason, reviewedBy: userId, reviewedAt: new Date() },
-        include: MEMBERSHIP_INCLUDE,
+    const updated = await prisma.member.update({
+        where: { id: member.id },
+        data: { status: 'REJECTED', rejectionReason },
+        include: MEMBER_INCLUDE,
     });
 
-    await CacheService.delete(cacheKeys.userMe(membership.userId));
+    await CacheService.delete(cacheKeys.userMe(member.id));
 
     wideLogger.addCtx('reject_join_request', 'success');
-    wideLogger.addCtx('reject_requester_id', membership.userId);
     return res.status(200).json({
         status: 'success',
         message: 'Join request rejected.',
-        membership: updated,
+        member: updated,
     });
 });
 
 // POST /api/v1/join-requests/ban
-// Admins use this to stop a member who keeps re-applying after repeated rejections.
 export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'ban_user');
     const userId = req.user?.id;
@@ -329,17 +339,17 @@ export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Respons
 
     const input = req.body as BanUserInput;
 
-    const membership = await prisma.churchMembership.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id: input.membershipId },
-        select: { id: true, userId: true, status: true, isBanned: true },
+        select: { id: true, status: true, isBanned: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('ban_user', 'request_not_found');
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
-    if (membership.isBanned) {
+    if (member.isBanned) {
         wideLogger.addCtx('ban_user', 'already_banned');
         return res.status(200).json({
             status: 'success',
@@ -349,32 +359,28 @@ export const banUser = catchAsync(async (req: AuthenticatedRequest, res: Respons
 
     const banReason = input.banReason?.trim() || null;
 
-    const updated = await prisma.churchMembership.update({
-        where: { id: membership.id },
+    const updated = await prisma.member.update({
+        where: { id: member.id },
         data: {
             isBanned: true,
             status: 'REJECTED',
             bannedAt: new Date(),
             banReason,
-            reviewedBy: userId,
-            reviewedAt: new Date(),
         },
-        include: MEMBERSHIP_INCLUDE,
+        include: MEMBER_INCLUDE,
     });
 
-    await CacheService.delete(cacheKeys.userMe(membership.userId));
+    await CacheService.delete(cacheKeys.userMe(member.id));
 
     wideLogger.addCtx('ban_user', 'success');
-    wideLogger.addCtx('ban_requester_id', membership.userId);
     return res.status(200).json({
         status: 'success',
         message: 'User banned from this church.',
-        membership: updated,
+        member: updated,
     });
 });
 
 // POST /api/v1/join-requests/unban
-// Reverses a ban so the user can submit join requests again.
 export const unbanUser = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'unban_user');
     const userId = req.user?.id;
@@ -387,17 +393,17 @@ export const unbanUser = catchAsync(async (req: AuthenticatedRequest, res: Respo
 
     const input = req.body as UnbanUserInput;
 
-    const membership = await prisma.churchMembership.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id: input.membershipId },
-        select: { id: true, userId: true, status: true, isBanned: true },
+        select: { id: true, status: true, isBanned: true },
     });
 
-    if (!membership) {
+    if (!member) {
         wideLogger.addCtx('unban_user', 'request_not_found');
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
 
-    if (!membership.isBanned) {
+    if (!member.isBanned) {
         wideLogger.addCtx('unban_user', 'not_banned');
         return res.status(200).json({
             status: 'success',
@@ -405,23 +411,22 @@ export const unbanUser = catchAsync(async (req: AuthenticatedRequest, res: Respo
         });
     }
 
-    const updated = await prisma.churchMembership.update({
-        where: { id: membership.id },
+    const updated = await prisma.member.update({
+        where: { id: member.id },
         data: {
             isBanned: false,
             bannedAt: null,
             banReason: null,
         },
-        include: MEMBERSHIP_INCLUDE,
+        include: MEMBER_INCLUDE,
     });
 
-    await CacheService.delete(cacheKeys.userMe(membership.userId));
+    await CacheService.delete(cacheKeys.userMe(member.id));
 
     wideLogger.addCtx('unban_user', 'success');
-    wideLogger.addCtx('unban_requester_id', membership.userId);
     return res.status(200).json({
         status: 'success',
         message: 'User unbanned from this church.',
-        membership: updated,
+        member: updated,
     });
 });

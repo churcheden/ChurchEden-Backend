@@ -20,34 +20,36 @@ export const googleStrategy = new GoogleStrategy({
             return done(new Error("No email found in Google profile!"));
         };
 
-        let user = await prisma.user.findUnique({
+        // Web Google sign-in is admin-only — authenticate against SuperAdmin.
+        let superAdmin = await prisma.superAdmin.findUnique({
             where: { googleId }
         });
 
-        if(user) {
-            return done(null, user)
+        if(superAdmin) {
+            return done(null, { ...superAdmin, accountType: 'ADMIN' as const })
         };
 
-        user = await prisma.user.findUnique({
+        superAdmin = await prisma.superAdmin.findUnique({
             where: { email }
         });
 
-        if(user) {
-            user = await prisma.user.update({
-                where: { id: user.id },
+        if(superAdmin) {
+            superAdmin = await prisma.superAdmin.update({
+                where: { id: superAdmin.id },
                 data: {
                     loginProvider: 'GOOGLE',
                     googleId: profile.id,
                     isVerified: true,
+                    fullName: superAdmin.fullName ?? displayName ?? null,
                 }
             })
-            return done(null, user);
+            return done(null, { ...superAdmin, accountType: 'ADMIN' as const });
         }
 
         const randomPassword = randomBytes(32).toString('hex');
         const hashedPassword = await hashPassword(randomPassword);
 
-        user = await prisma.user.create({
+        superAdmin = await prisma.superAdmin.create({
             data: {
                 email,
                 password: hashedPassword,
@@ -57,7 +59,7 @@ export const googleStrategy = new GoogleStrategy({
                 isVerified: true,
             }
         });
-        return done(null, user);
+        return done(null, { ...superAdmin, accountType: 'ADMIN' as const });
 
     }catch(error) {
         done(error as Error, undefined);

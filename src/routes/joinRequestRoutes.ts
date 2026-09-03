@@ -30,14 +30,14 @@ const resolveChurchFromMembership = async (req: AuthenticatedRequest): Promise<s
     if (!membershipId) {
         throw new AppError('Membership id is required!', 400, 'MISSING_MEMBERSHIP_ID');
     }
-    const membership = await prisma.churchMembership.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id: membershipId },
         select: { churchId: true },
     });
-    if (!membership) {
+    if (!member) {
         throw new AppError('Join request not found!', 404, 'REQUEST_NOT_FOUND');
     }
-    return membership.churchId;
+    return member.churchId;
 };
 
 router.post('/',

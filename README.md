@@ -34,15 +34,15 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | POST | `/verify-email` | | Confirm the email with the OTP. Returns `accessToken`, `refreshToken`, `user`. |
 | POST | `/resend-verification` | | Resend the verification OTP for an email. |
 | POST | `/login` | | Sign in. Returns `accessToken`, `refreshToken`, `user`. |
-| GET | `/me` | 🔒 | Get the signed-in user + their church memberships. |
+| GET | `/me` | 🔒 | Get the signed-in user + their church. |
 | POST | `/refresh` | | Rotate tokens. Body `{refreshToken}` (**mobile/platform clients**) or HttpOnly cookie (**web**). Returns `data.newAccessToken`, `data.newRefreshToken`. |
 | POST | `/logout` | | Revoke refresh tokens. |
-| POST | `/forgot-password` | | Email a password-reset token. Body `{email}`. |
+| POST | `/forgot-password` | | Email a password-reset token (SuperAdmin only). Body `{email}`. |
 | POST | `/reset-password` | | Set a new password. Body `{token, newPassword}`. |
 | GET | `/google/url` | | Returns `{ url }` to redirect the browser to Google OAuth. |
 | GET | `/google` | | Redirect to Google's consent screen (passport). |
 | GET | `/google/callback` | | OAuth callback — sets cookies and redirects to `FRONTEND_URL`. |
-| POST | `/google/token` | | Exchange a Google ID token (`{idToken, platform?, accountType?}`) for a token pair (mobile apps). |
+| POST | `/google/token` | | Exchange a Google ID token (`{idToken, platform?, accountType?, churchId?}`) for a token pair (mobile apps). `churchId` is required when `accountType: MEMBER` and no Member record exists yet. |
 
 ### Onboarding — `{base}/onboarding/church`
 
@@ -53,7 +53,7 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | PATCH | `/step-3` | 🔒 | Multipart: `logo` (≤5MB) + `serviceTimes` JSON string (e.g. `[{"label":"Sunday Service","dayOfWeek":0,"time":"10:30"}]`). |
 | PATCH | `/step-4` | 🔒 | Ministries: `ministryIds[]` + `customMinistries[]`. |
 | GET | `/draft` | 🔒 | Resume a saved onboarding draft. |
-| POST | `/complete` | 🔒 | Finish onboarding. Returns the created `church`, `membership` and `admin`. |
+| POST | `/complete` | 🔒 | Finish onboarding. Returns the created `church`. The SuperAdmin becomes the church owner. |
 
 ### Members — `{base}/members`
 
@@ -67,9 +67,9 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/` | 🔒 | List the church directory. Query param: `q` (search by name/city). Returns `{ churches: [...] }`. |
-| POST | `/:churchId/leave` | 🔒 | The authenticated member leaves an **approved** church. No body. |
-| GET | `/:churchId/admins` | 🔒 | List a church's admins. Requires ADMIN/SUPER_ADMIN of the church. |
-| DELETE | `/:churchId` | 🔒 | Delete a church (SUPER_ADMIN only). Cascades memberships, admins, service times and ministries. |
+| POST | `/:churchId/leave` | 🔒 | The authenticated member leaves an **approved** church. No body. Deletes the Member record. |
+| GET | `/:churchId/admins` | 🔒 | List a church's leadership. Returns `{ superAdmin, memberAdmins }`. Requires ADMIN/SUPER_ADMIN of the church. |
+| DELETE | `/:churchId` | 🔒 | Delete a church (SUPER_ADMIN only). Cascades members, member profiles, service times and ministries. |
 
 ### Church Requests — `{base}/church-requests`
 
@@ -81,21 +81,23 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/` | 🔒 | Submit a join request. Body `{churchId}`. |
-| GET | `/` | 🔒 | List join requests (admin only). Query params: `status` (`PENDING\|APPROVED\|REJECTED`), `churchId` (uuid). |
-| POST | `/cancel` | 🔒 | The authenticated member cancels their **pending** join request. Body `{membershipId}`. |
-| POST | `/approve` | 🔒 | Approve. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN of the church. |
-| POST | `/reject` | 🔒 | Reject. Body `{membershipId, rejectionReason?}`. Requires ADMIN/SUPER_ADMIN of the church. |
-| POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason}`. Requires ADMIN/SUPER_ADMIN. |
-| POST | `/unban` | 🔒 | Lift a ban so the user can submit join requests again. Body `{membershipId}`. Requires ADMIN/SUPER_ADMIN. |
+| POST | `/` | 🔒 | Submit a join request. Body `{churchId}`. Creates a `Member` record (status `PENDING`) with `churchId` and the caller's email. |
+| GET | `/` | 🔒 | List join requests (SuperAdmin only). Query params: `status` (`PENDING\|APPROVED\|REJECTED`). |
+| POST | `/cancel` | 🔒 | The authenticated member cancels their **pending** join request. Body `{membershipId}`. Deletes the Member record. |
+| POST | `/approve` | 🔒 | Approve. Body `{membershipId}`. Requires SUPER_ADMIN of the church. |
+| POST | `/reject` | 🔒 | Reject. Body `{membershipId, rejectionReason?}`. Requires SUPER_ADMIN of the church. |
+| POST | `/ban` | 🔒 | Ban a user from the church (stops repeat requests). Body `{membershipId, banReason}`. Requires SUPER_ADMIN. |
+| POST | `/unban` | 🔒 | Lift a ban so the user can submit join requests again. Body `{membershipId}`. Requires SUPER_ADMIN. |
 
 ### Payments — `{base}/payments` (also mounted at `{base}`)
 
+Subscriptions apply to the church (owned by a SuperAdmin), billed via Paystack.
+
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/initialize` | 🔒 | Start a subscription payment. Returns `data.authorizationUrl`. |
+| GET | `/initialize` | 🔒 | Start a subscription payment for the SuperAdmin's church (SuperAdmin only). Returns `data.authorizationUrl`. |
 | GET | `/initialize/verify/:reference` | 🔒 | Verify a payment by its transaction reference. |
-| GET | `/subscription/cancel` | 🔒 | Cancel the user's subscription. |
+| GET | `/subscription/cancel` | 🔒 | Cancel the SuperAdmin's church subscription. |
 | POST | `/webhooks/paystack` | | Paystack webhook (raw JSON body for signature verification). Also reachable at `{base}/webhooks/paystack`. |
 
 *Because payments are mounted at both `/api/v1` and `/api/v1/payments`, each of the above also works directly under `/api/v1` (e.g. `/api/v1/initialize`, `/api/v1/initialize/verify/:ref`, `/api/v1/subscription/cancel`).*
@@ -108,10 +110,15 @@ All REST endpoints are prefixed with `/api/v1`. Auth endpoints are additionally 
 
 ## Authentication flow
 
-1. **Register** → server emails a 6-digit OTP.
+Two distinct account types exist: **SuperAdmin** (church owner/administrator) and
+**Member** (a regular member of a specific church).
+
+1. **Register** (SuperAdmin) → server emails a 6-digit OTP.
 2. **Verify email** (or **Login** for returning users) → returns `accessToken` + `refreshToken`.
-3. Include `Authorization: Bearer <accessToken>` on protected endpoints. When a request returns `401`, call `/auth/refresh` to rotate, then retry once.
-4. **Web** clients: use the HttpOnly cookies set by login/refresh (`sameSite: strict`) instead of storing tokens in JS.
+3. **Members** are created at join time (`POST /join-requests` with a `churchId`)
+   or via Google OAuth (`POST /auth/google/token` with `accountType: MEMBER`).
+4. Include `Authorization: Bearer <accessToken>` on protected endpoints. When a request returns `401`, call `/auth/refresh` to rotate, then retry once.
+5. **Web** clients (SuperAdmin-only): use the HttpOnly cookies set by login/refresh (`sameSite: strict`) instead of storing tokens in JS.
 
 ## Postman
 

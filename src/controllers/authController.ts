@@ -38,28 +38,28 @@ const resetTokenHashesMatch = (hashedToken: string, storedHash: string): boolean
     return crypto.timingSafeEqual(a, b);
 };
 
-// Register User
+// Register SuperAdmin (church owner)
 export const registerUser = catchAsync(async(req: Request, res: Response) => {
         const { email: rawEmail, password } = req.body;
         const email = rawEmail.trim().toLowerCase();
 
-        const existingUser = await prisma.user.findUnique({
+        const existingSuperAdmin = await prisma.superAdmin.findUnique({
             where: { email }
         });
 
-        if(existingUser) {
-            throw new AppError('User already exists!', 400, 'USER_EXISTS');
+        if(existingSuperAdmin) {
+            throw new AppError('Admin already exists!', 400, 'ADMIN_EXISTS');
         };
 
         const hashedPassword = await hashPassword(password);
         const otp = generateOTP();
         const otpHash = await hashPassword(otp);
 
-        // Pending registration lives in Redis only — no User row is created until OTP verification.
+        // Pending registration lives in Redis only — no SuperAdmin row is created until OTP verification.
         await CacheService.set(
             cacheKeys.pendingRegistration(email),
             { hashedPassword, otpHash, attempts: 0, createdAt: Date.now() },
-            600, // 10 min TTL — Redis expires it automatically, no cleanup job
+            600,
         );
 
         const firstName = email.split('@')[0] ?? 'there';
@@ -83,7 +83,7 @@ export const registerUser = catchAsync(async(req: Request, res: Response) => {
         });
 });
 
-// Verify Email with OTP
+// Verify Email with OTP — creates the SuperAdmin row
 export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
     const { otp, email: rawEmail } = req.body;
     const email = rawEmail?.trim().toLowerCase();
@@ -131,7 +131,7 @@ export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
         throw new AppError('Invalid OTP, please enter the right OTP', 400, 'INVALID_OTP');
     };
 
-    const newUser = await prisma.user.create({
+    const newAdmin = await prisma.superAdmin.create({
         data: {
             email,
             password: pending.hashedPassword,
@@ -139,23 +139,24 @@ export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
         }
     });
 
-    const { accessToken, refreshToken } = await issueAuthTokens({
-        id: newUser.id,
-        email: newUser.email,
+    const { accessToken, refreshToken } = await issueAdminAuthTokens({
+        id: newAdmin.id,
+        adminId: newAdmin.id,
+        email: newAdmin.email,
     });
 
     setAuthCookies(res, accessToken, refreshToken);
 
-    const firstName = newUser.email.split('@')[0] ?? 'there';
+    const firstName = newAdmin.email.split('@')[0] ?? 'there';
     await emailService.sendWelcomeEmail({
         firstName,
-        email: newUser.email,
+        email: newAdmin.email,
         signInUrl: `${env.FRONTEND_URL}/onboarding/sign-in`,
     });
 
     await CacheService.delete(cacheKey);
 
-    wideLogger.addCtx('user_id', newUser.id);
+    wideLogger.addCtx('user_id', newAdmin.id);
     wideLogger.addCtx('verify_email_result', 'success');
     return res.status(200).json({
         status: 'success',
@@ -163,11 +164,11 @@ export const verifyEmail = catchAsync(async(req: Request, res: Response ) => {
         accessToken,
         refreshToken,
         user: {
-            id: newUser.id,
-            email: newUser.email,
-            isVerified: newUser.isVerified,
-            createdAt: newUser.createdAt,
-            updatedAt: newUser.updatedAt,
+            id: newAdmin.id,
+            email: newAdmin.email,
+            isVerified: newAdmin.isVerified,
+            createdAt: newAdmin.createdAt,
+            updatedAt: newAdmin.updatedAt,
         },
     });
 });
@@ -184,45 +185,34 @@ export const loginUser = catchAsync(async (req: Request, res: Response) => {
     const isWeb = platform === 'web';
 
     // Account-type routing:
-    //  - WEB always authenticates against the Admin table only. Plain members
+    //  - WEB always authenticates against SuperAdmin only. Plain members
     //    have no web login under this design.
-    //  - MOBILE tries Admin first, then falls back to User — an admin may also
+    //  - MOBILE tries SuperAdmin first, then falls back to Member — an admin may also
     //    want to authenticate on the mobile app.
-    let admin = await prisma.admin.findUnique({ where: { email } });
-    let user: { id: string; email: string; fullName: string | null; isVerified: boolean; loginProvider: string; password: string | null } | null = null;
+    let superAdmin = await prisma.superAdmin.findUnique({ where: { email } });
+    let member: { id: string; email: string; isVerified: boolean; password: string | null; churchId: string } | null = null;
 
-    if (!admin && !isWeb) {
-        user = await prisma.user.findUnique({ where: { email } });
-    } else if (admin && isWeb) {
-        // Ensure a deactivated admin can't log into the web dashboard.
-        if (!admin.isActive) {
-            wideLogger.addCtx('login_fail_reason', 'admin_deactivated');
-            throw new AppError('This admin account has been deactivated.', 403, 'ADMIN_DEACTIVATED');
-        }
+    if (!superAdmin && !isWeb) {
+        member = await prisma.member.findUnique({ where: { email } });
     }
 
-    if (!admin || !user) {
-        wideLogger.addCtx('login_fail_reason', 'not_found');
-        throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
-    }
-
-    if (admin) {
-        const valid = admin.password != null ? await comparePasswords(password, admin.password) : false;
+    if (superAdmin) {
+        const valid = superAdmin.password != null ? await comparePasswords(password, superAdmin.password) : false;
         if (!valid) {
             wideLogger.addCtx('login_fail_reason', 'admin_invalid_password');
             throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
         }
-        if (!admin.isVerified && admin.loginProvider === 'EMAIL') {
+        if (!superAdmin.isVerified && superAdmin.loginProvider === 'EMAIL') {
             wideLogger.addCtx('login_fail_reason', 'admin_email_not_verified');
             throw new AppError('Please verify your email before signing in.', 403, 'EMAIL_NOT_VERIFIED');
         }
 
-        wideLogger.addCtx('admin_id', admin.id);
+        wideLogger.addCtx('admin_id', superAdmin.id);
 
         const { accessToken, refreshToken } = await issueAdminAuthTokens({
-            id: admin.id,
-            adminId: admin.id,
-            email: admin.email,
+            id: superAdmin.id,
+            adminId: superAdmin.id,
+            email: superAdmin.email,
         });
 
         setAuthCookies(res, accessToken, refreshToken);
@@ -236,34 +226,33 @@ export const loginUser = catchAsync(async (req: Request, res: Response) => {
             refreshToken,
             accountType: 'ADMIN',
             user: {
-                id: admin.id,
-                adminId: admin.id,
-                email: admin.email,
-                fullName: admin.fullName,
-                isVerified: admin.isVerified,
-                loginProvider: admin.loginProvider,
-                isActive: admin.isActive,
+                id: superAdmin.id,
+                adminId: superAdmin.id,
+                email: superAdmin.email,
+                fullName: superAdmin.fullName,
+                isVerified: superAdmin.isVerified,
+                loginProvider: superAdmin.loginProvider,
             },
         });
     }
 
     // MEMBER fallback (mobile only)
-    if (user) {
-        const isValidatedPassword = user.password != null ? await comparePasswords(password, user.password) : false;
+    if (member) {
+        const isValidatedPassword = member.password != null ? await comparePasswords(password, member.password) : false;
         if (!isValidatedPassword) {
-            wideLogger.addCtx('user_id', user.id);
+            wideLogger.addCtx('user_id', member.id);
             wideLogger.addCtx('login_fail_reason', 'invalid_password');
             throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
         }
 
-        if (!user.isVerified && user.loginProvider === 'EMAIL') {
-            wideLogger.addCtx('user_id', user.id);
+        if (!member.isVerified) {
+            wideLogger.addCtx('user_id', member.id);
             wideLogger.addCtx('login_fail_reason', 'email_not_verified');
             throw new AppError('Please verify your email before signing in.', 403, 'EMAIL_NOT_VERIFIED');
         }
 
-        wideLogger.addCtx('user_id', user.id);
-        const { accessToken, refreshToken } = await issueAuthTokens({ id: user.id, email: user.email });
+        wideLogger.addCtx('user_id', member.id);
+        const { accessToken, refreshToken } = await issueAuthTokens({ id: member.id, email: member.email });
         setAuthCookies(res, accessToken, refreshToken);
 
         wideLogger.addCtx('login_success', true);
@@ -275,42 +264,46 @@ export const loginUser = catchAsync(async (req: Request, res: Response) => {
             refreshToken,
             accountType: 'MEMBER',
             user: {
-                id: user.id,
-                email: user.email,
-                fullName: user.fullName,
-                isVerified: user.isVerified,
-                loginProvider: user.loginProvider,
+                id: member.id,
+                email: member.email,
+                isVerified: member.isVerified,
+                churchId: member.churchId,
             },
         });
+    }
+
+    if (!superAdmin && !member && isWeb) {
+        wideLogger.addCtx('login_fail_reason', 'not_found');
+        throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
     }
 
     throw new AppError('Invalid email or password!', 401, 'UNAUTHORIZED');
 });
 
-// Forgot Password
+// Forgot Password — SuperAdmin only (only SuperAdmin has reset token fields)
 export const forgotPassword = catchAsync(async(req: Request, res: Response) => {
     wideLogger.addCtx('action', 'forgot_password');
     const { email } = req.body;
     wideLogger.addCtx('email', email);
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const superAdmin = await prisma.superAdmin.findUnique({ where: { email } });
 
      const silentOk = () => res.status(200).json({
         message: 'If user email exists, a reset link has been sent.'
     });
 
-    if(!user) {
+    if(!superAdmin) {
         wideLogger.addCtx('forgot_pwd_result', 'user_not_found_silent');
         return silentOk();
     };
 
-    wideLogger.addCtx('user_id', user.id);
+    wideLogger.addCtx('user_id', superAdmin.id);
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-    await prisma.user.update({
-        where: { id: user.id },
+    await prisma.superAdmin.update({
+        where: { id: superAdmin.id },
         data: {
             resetTokenHash: hashedToken,
             resetTokenExpires: new Date(Date.now() + 900000),
@@ -328,7 +321,7 @@ export const forgotPassword = catchAsync(async(req: Request, res: Response) => {
     return silentOk();
 });
 
-// Reset Password
+// Reset Password — SuperAdmin only
 export const resetPassword = catchAsync(async(req: Request, res: Response) => {
         wideLogger.addCtx('action', 'reset_password');
         const { token, newPassword } = req.body;
@@ -340,11 +333,7 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
 
         const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
 
-        // Verify the hashed token in constant time instead of an exact DB
-        // equality match. Reset URLs carry only the `token` (no email), so we
-        // compare against the small set of users with an active, non-expired
-        // reset token.
-        const candidates = await prisma.user.findMany({
+        const candidates = await prisma.superAdmin.findMany({
             where: {
                 resetTokenHash: { not: null },
                 resetTokenExpires: { gt: new Date() }
@@ -357,37 +346,37 @@ export const resetPassword = catchAsync(async(req: Request, res: Response) => {
             },
         });
 
-        const user = candidates.find(
+        const superAdmin = candidates.find(
             (candidate) =>
                 candidate.resetTokenHash != null &&
                 resetTokenHashesMatch(hashedToken, candidate.resetTokenHash),
         ) ?? null;
 
-        if(!user) {
+        if(!superAdmin) {
             wideLogger.addCtx('reset_password_result', 'invalid_token');
             throw new AppError('Invalid or expired token', 404, 'INVALID_TOKEN');
         };
 
-        wideLogger.addCtx('user_id', user.id);
+        wideLogger.addCtx('user_id', superAdmin.id);
         const hashedNewPassword = await hashPassword(newPassword);
 
         await prisma.$transaction([
-            prisma.user.update({
-                where: {id: user.id},
+            prisma.superAdmin.update({
+                where: {id: superAdmin.id},
                 data: {
                     password: hashedNewPassword,
                     resetTokenHash: null,
                     resetTokenExpires: null,
                 }
             }),
-            prisma.refreshToken.updateMany({
-                where: { userId: user.id, revokedAt: null },
+            prisma.superAdminRefreshToken.updateMany({
+                where: { superAdminId: superAdmin.id, revokedAt: null },
                 data: { revokedAt: new Date() },
             }),
         ]);
 
-        const username = user.fullName?.split(' ')[0] || 'User';
-        await emailService.sendPasswordChangeEmail(user.email, username);
+        const username = superAdmin.fullName?.split(' ')[0] || 'User';
+        await emailService.sendPasswordChangeEmail(superAdmin.email, username);
 
         wideLogger.addCtx('reset_password_result', 'success');
         return res.status(200).json({
@@ -465,31 +454,25 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
         try {
             payload = await verifyRefreshToken(refreshTokenValue);
         } catch {
-            // Covers expired, malformed and tampered refresh tokens — always a
-            // clean 401, never an unhandled 500 from the JWT library.
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         }
 
         const accountType = payload.accountType === 'ADMIN' ? 'ADMIN' : 'MEMBER';
 
         if (accountType === 'ADMIN') {
-            const admin = await prisma.admin.findUnique({
+            const superAdmin = await prisma.superAdmin.findUnique({
                 where: { id: payload.id },
-                select: { id: true, email: true, isActive: true },
+                select: { id: true, email: true },
             });
 
-            if (!admin) {
+            if (!superAdmin) {
                 wideLogger.addCtx('refresh_token_result', 'invalid_admin_or_expired');
                 throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
             }
-            if (!admin.isActive) {
-                wideLogger.addCtx('refresh_token_result', 'admin_deactivated');
-                throw new AppError('This admin account has been deactivated.', 403, 'ADMIN_DEACTIVATED');
-            }
 
-            const storedTokens = await prisma.adminRefreshToken.findMany({
+            const storedTokens = await prisma.superAdminRefreshToken.findMany({
                 where: {
-                    adminId: admin.id,
+                    superAdminId: superAdmin.id,
                     revokedAt: null,
                     expiresAt: { gt: new Date() },
                 },
@@ -509,13 +492,13 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
                 throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
             }
 
-            wideLogger.addCtx('admin_id', admin.id);
+            wideLogger.addCtx('admin_id', superAdmin.id);
 
             const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
                 await issueAdminAuthTokens({
-                    id: admin.id,
-                    adminId: admin.id,
-                    email: admin.email,
+                    id: superAdmin.id,
+                    adminId: superAdmin.id,
+                    email: superAdmin.email,
                 });
 
             await revokeAdminRefreshToken(matchedRecord.id);
@@ -529,19 +512,19 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
             });
         }
 
-        const user = await prisma.user.findUnique({
+        const member = await prisma.member.findUnique({
             where: { id: payload.id },
             select: { id: true, email: true },
         });
 
-        if(!user) {
+        if(!member) {
             wideLogger.addCtx('refresh_token_result', 'invalid_user_or_expired');
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         };
 
-        const storedTokens = await prisma.refreshToken.findMany({
+        const storedTokens = await prisma.memberRefreshToken.findMany({
             where: {
-                userId: user.id,
+                memberId: member.id,
                 revokedAt: null,
                 expiresAt: { gt: new Date() },
             },
@@ -561,15 +544,14 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
             throw new AppError("Invalid or expired refresh token!", 401, 'INVALID_TOKEN');
         };
 
-        wideLogger.addCtx('user_id', user.id);
+        wideLogger.addCtx('user_id', member.id);
 
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
             await issueAuthTokens({
-                id: user.id,
-                email: user.email,
+                id: member.id,
+                email: member.email,
             });
 
-        // Rotate: the used refresh token is single-use
         await revokeRefreshToken(matchedRecord.id);
 
         setAuthCookies(res, newAccessToken, newRefreshToken);
@@ -616,42 +598,24 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
             return res.redirect(`${frontendUrl}/onboarding/sign-in?error=auth_failed`);
         };
 
-        // WEB google sign-in is admin-only. Resolve the Admin row for this
-        // account (linked to the member User via linkedUserId, or by email)
-        // and issue an ADMIN session. Plain members have no web login.
+        // WEB google sign-in is admin-only. The passport strategy already
+        // authenticated against SuperAdmin. Issue an ADMIN session.
         if (platform === 'web') {
-            const dbUser = await prisma.user.findUnique({
+            const superAdmin = await prisma.superAdmin.findUnique({
                 where: { id: user.id },
                 select: { id: true, email: true, fullName: true, googleId: true },
             });
-            const admin = await prisma.admin.findFirst({
-                where: {
-                    OR: [{ linkedUserId: user.id }, { email: user.email }],
-                },
-            });
 
-            if (!admin || !admin.isActive) {
+            if (!superAdmin) {
                 wideLogger.addCtx('google_admin_result', 'not_an_admin');
                 return res.redirect(`${frontendUrl}/onboarding/sign-in?error=not_an_admin`);
             }
 
-            if (admin.googleId !== dbUser?.googleId) {
-                await prisma.admin.update({
-                    where: { id: admin.id },
-                    data: {
-                        googleId: dbUser?.googleId ?? null,
-                        loginProvider: 'GOOGLE',
-                        isVerified: true,
-                        fullName: admin.fullName ?? dbUser?.fullName ?? null,
-                    },
-                });
-            }
-
-            wideLogger.addCtx('admin_id', admin.id);
+            wideLogger.addCtx('admin_id', superAdmin.id);
             const { accessToken, refreshToken } = await issueAdminAuthTokens({
-                id: admin.id,
-                adminId: admin.id,
-                email: admin.email,
+                id: superAdmin.id,
+                adminId: superAdmin.id,
+                email: superAdmin.email,
             });
 
             setAuthCookies(res, accessToken, refreshToken);
@@ -662,37 +626,30 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
         wideLogger.addCtx('user_id', user.id);
         wideLogger.addCtx('email', user.email);
 
-        const dbUser = await prisma.user.findUnique({
+        const member = await prisma.member.findUnique({
             where: { id: user.id },
             select: {
                 id: true,
                 email: true,
-                fullName: true,
-                createdAt: true,
+                isVerified: true,
             },
         });
 
-        const isNewUser = dbUser && (Date.now() - dbUser.createdAt.getTime()) < 120_000;
-        if (isNewUser && dbUser) {
-            const firstName = dbUser.fullName?.split(' ')[0] ?? dbUser.email.split('@')[0] ?? 'there';
-            const welcomeSent = await emailService.sendWelcomeEmail({
-                firstName,
-                ...(dbUser.fullName ? { fullName: dbUser.fullName } : {}),
-                email: dbUser.email,
-                signInUrl: `${frontendUrl}/onboarding/sign-in`,
-            });
-
-            wideLogger.addCtx('welcome_email_sent_to', dbUser.email);
-            wideLogger.addCtx('welcome_email_sent', welcomeSent);
+        if (!member) {
+            wideLogger.addCtx('google_auth_result', 'member_not_found');
+            if (platform === 'mobile') {
+                return res.redirect(`${redirect || 'churcheden://auth/callback'}?error=member_not_found`);
+            }
+            return res.redirect(`${frontendUrl}/onboarding/sign-in?error=member_not_found`);
         }
 
         const { accessToken, refreshToken } = await issueAuthTokens({
-            id: user.id,
-            email: user.email,
+            id: member.id,
+            email: member.email,
         });
 
         const hasProfile = await prisma.memberProfile.findUnique({
-            where: { userId: user.id },
+            where: { memberId: member.id },
         });
 
         wideLogger.addCtx('google_auth_result', 'success');
@@ -710,13 +667,15 @@ export const googleCallback = catchAsync(async(req: AuthenticatedRequest, res: R
 });
 
 // Exchange a Google ID token (from the mobile app) for ChurchEden tokens.
-// The app obtains the idToken via expo-auth-session using the platform-native
-// Google client; this endpoint verifies it and returns tokens the app stores
-// in SecureStore (the mobile app never relies on cookies).
 export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response) => {
     wideLogger.addCtx('action', 'google_token_exchange');
 
-    const { idToken, platform, accountType = 'MEMBER' } = req.body as { idToken: string; platform: 'android' | 'ios' | 'web' | 'expo'; accountType?: 'ADMIN' | 'MEMBER' };
+    const { idToken, platform, accountType = 'MEMBER', churchId } = req.body as {
+        idToken: string;
+        platform: 'android' | 'ios' | 'web' | 'expo';
+        accountType?: 'ADMIN' | 'MEMBER';
+        churchId?: string;
+    };
 
     const clientIdForPlatform =
         platform === 'android'
@@ -752,29 +711,27 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
 
     wideLogger.addCtx('google_id', payload.sub);
 
-    // ADMIN-context exchange: authenticate against the Admin table. Unlike
-    // members, an admin Google sign-in never auto-creates an account — the
-    // Admin row must already exist (e.g. created during church onboarding).
+    // ADMIN-context exchange: authenticate against the SuperAdmin table.
     if (accountType === 'ADMIN') {
-        let admin = await prisma.admin.findUnique({ where: { googleId: payload.sub } });
-        if (!admin) {
-            admin = await prisma.admin.findUnique({ where: { email } });
+        let superAdmin = await prisma.superAdmin.findUnique({ where: { googleId: payload.sub } });
+        if (!superAdmin) {
+            superAdmin = await prisma.superAdmin.findUnique({ where: { email } });
         }
-        if (!admin || !admin.isActive) {
-            throw new AppError('No active admin account matches this Google account.', 401, 'ADMIN_NOT_FOUND');
+        if (!superAdmin) {
+            throw new AppError('No admin account matches this Google account.', 401, 'ADMIN_NOT_FOUND');
         }
-        if (admin.googleId !== payload.sub) {
-            admin = await prisma.admin.update({
-                where: { id: admin.id },
+        if (superAdmin.googleId !== payload.sub) {
+            superAdmin = await prisma.superAdmin.update({
+                where: { id: superAdmin.id },
                 data: { googleId: payload.sub, loginProvider: 'GOOGLE', isVerified: true },
             });
         }
-        wideLogger.addCtx('admin_id', admin.id);
+        wideLogger.addCtx('admin_id', superAdmin.id);
 
         const { accessToken, refreshToken } = await issueAdminAuthTokens({
-            id: admin.id,
-            adminId: admin.id,
-            email: admin.email,
+            id: superAdmin.id,
+            adminId: superAdmin.id,
+            email: superAdmin.email,
         });
 
         wideLogger.addCtx('google_admin_auth_result', 'success');
@@ -785,60 +742,66 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
             refreshToken,
             accountType: 'ADMIN',
             user: {
-                id: admin.id,
-                adminId: admin.id,
-                email: admin.email,
-                fullName: admin.fullName,
-                isVerified: admin.isVerified,
-                loginProvider: admin.loginProvider,
-                isActive: admin.isActive,
-                role: admin.role,
+                id: superAdmin.id,
+                adminId: superAdmin.id,
+                email: superAdmin.email,
+                fullName: superAdmin.fullName,
+                isVerified: superAdmin.isVerified,
+                loginProvider: superAdmin.loginProvider,
             },
         });
     }
 
-    let user = await prisma.user.findUnique({ where: { googleId: payload.sub } });
+    // MEMBER-context exchange: find or link existing Member, or create new.
+    // Member requires churchId.
+    if (!churchId) {
+        throw new AppError('churchId is required for member sign-in.', 400, 'MISSING_CHURCH_ID');
+    }
 
-    if (!user) {
-        user = await prisma.user.findUnique({ where: { email } });
-        if (user) {
-            user = await prisma.user.update({
-                where: { id: user.id },
+    // Verify the church exists.
+    const church = await prisma.church.findUnique({
+        where: { id: churchId },
+        select: { id: true },
+    });
+    if (!church) {
+        throw new AppError('Church not found!', 404, 'CHURCH_NOT_FOUND');
+    }
+
+    let member = await prisma.member.findUnique({ where: { googleId: payload.sub } });
+
+    if (!member) {
+        member = await prisma.member.findUnique({ where: { email } });
+        if (member) {
+            member = await prisma.member.update({
+                where: { id: member.id },
                 data: {
-                    loginProvider: 'GOOGLE',
                     googleId: payload.sub,
                     isVerified: true,
-                    ...(payload.name ? { fullName: user.fullName ?? payload.name } : {}),
                 },
             });
         }
     }
 
-    if (!user) {
-        const randomPassword = crypto.randomBytes(32).toString('hex');
-        const hashedPassword = await hashPassword(randomPassword);
-
-        user = await prisma.user.create({
+    if (!member) {
+        member = await prisma.member.create({
             data: {
                 email,
-                password: hashedPassword,
                 googleId: payload.sub,
-                fullName: payload.name ?? null,
-                loginProvider: 'GOOGLE',
                 isVerified: true,
+                churchId,
             },
         });
     }
 
-    wideLogger.addCtx('user_id', user.id);
+    wideLogger.addCtx('user_id', member.id);
 
     const { accessToken, refreshToken } = await issueAuthTokens({
-        id: user.id,
-        email: user.email,
+        id: member.id,
+        email: member.email,
     });
 
     const hasProfile = await prisma.memberProfile.findUnique({
-        where: { userId: user.id },
+        where: { memberId: member.id },
     });
 
     wideLogger.addCtx('google_auth_result', 'success');
@@ -851,11 +814,10 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
         refreshToken,
         profileComplete: !!hasProfile,
         user: {
-            id: user.id,
-            email: user.email,
-            isVerified: user.isVerified,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
+            id: member.id,
+            email: member.email,
+            isVerified: member.isVerified,
+            churchId: member.churchId,
         },
     });
 });
@@ -868,8 +830,6 @@ export const logoutUser = catchAsync(async(req: AuthenticatedRequest, res: Respo
     let accountType = req.user?.accountType === 'ADMIN' ? 'ADMIN' as const : 'MEMBER' as const;
 
     if (!accountId) {
-        // The logout route does not require auth middleware, so resolve the
-        // account from a present access token (header or cookie) first.
         const accessToken = extractAccessToken(req);
         if (accessToken) {
             try {
@@ -931,7 +891,6 @@ export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: 
     wideLogger.addCtx('account_type', accountType);
 
     if (accountType === 'ADMIN') {
-        // Admin /me: return the Admin row + its church + linked member info.
         const cacheKey = cacheKeys.userMe(`admin:${id}`);
         const cached = await CacheService.get(cacheKey);
         if (cached) {
@@ -939,23 +898,21 @@ export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: 
             return res.status(200).json(cached);
         }
 
-        const admin = await prisma.admin.findUnique({
+        const superAdmin = await prisma.superAdmin.findUnique({
             where: { id },
             select: {
                 id: true,
                 email: true,
                 fullName: true,
                 isVerified: true,
-                isActive: true,
-                role: true,
+                loginProvider: true,
+                lastLogin: true,
                 createdAt: true,
-                linkedUserId: true,
-                linkedUser: { select: { id: true, fullName: true } },
                 church: { select: { id: true, name: true, logoUrl: true, city: true } },
             },
         });
 
-        if (!admin) {
+        if (!superAdmin) {
             wideLogger.addCtx('get_user_result', 'admin_not_found');
             throw new AppError('Admin not found!', 404, 'ADMIN_NOT_FOUND');
         }
@@ -963,7 +920,7 @@ export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: 
         const result = {
             status: 'success',
             accountType: 'ADMIN',
-            user: admin,
+            user: superAdmin,
             profileComplete: false,
         };
 
@@ -980,48 +937,33 @@ export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: 
         return res.status(200).json(cached);
     }
 
-    const user = await prisma.user.findUnique({
+    const member = await prisma.member.findUnique({
         where: { id },
         select: {
             id: true,
             email: true,
-            fullName: true,
             isVerified: true,
-            isPremium: true,
-            premiumExpiry: true,
-            loginProvider: true,
-            lastLogin: true,
-            createdAt: true,
+            role: true,
+            status: true,
+            joinedAt: true,
+            isBanned: true,
             memberProfile: { select: { id: true } },
-            churchMemberships: {
-                select: {
-                    id: true,
-                    role: true,
-                    status: true,
-                    isBanned: true,
-                    joinedAt: true,
-                    church: { select: { id: true, name: true, logoUrl: true } },
-                },
-                orderBy: { joinedAt: 'desc' },
-            },
+            church: { select: { id: true, name: true, logoUrl: true } },
         },
     });
 
-    if (!user) {
+    if (!member) {
         wideLogger.addCtx('get_user_result', 'user_not_found');
         throw new AppError('User not found!', 404, 'USER_NOT_FOUND');
     }
     wideLogger.addCtx('cache_hit', false);
 
-    const { memberProfile, churchMemberships, ...userData } = user;
+    const { memberProfile, ...memberData } = member;
 
     const result = {
         status: 'success',
         accountType: 'MEMBER',
-        user: {
-            ...userData,
-            memberships: churchMemberships,
-        },
+        user: memberData,
         profileComplete: !!memberProfile,
     };
 
