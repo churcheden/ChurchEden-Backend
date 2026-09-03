@@ -958,7 +958,7 @@ export const getCurrentUser = catchAsync(async (req: AuthenticatedRequest, res: 
             joinedAt: true,
             isBanned: true,
             memberProfile: { select: { id: true } },
-            church: { select: { id: true, name: true, logoUrl: true } },
+            church: { select: { id: true, name: true, logoUrl: true, city: true } },
         },
     });
 
