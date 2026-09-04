@@ -295,6 +295,16 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
 
     wideLogger.addCtx('user_id', superAdminId);
 
+    const existingChurch = await prisma.church.findUnique({ where: { superAdminId } });
+    if (existingChurch) {
+        await CacheService.delete(cacheKeys.churchOnboardingDraft(superAdminId));
+        await CacheService.delete(cacheKeys.userMe(`admin:${superAdminId}`));
+        return res.status(200).json({
+            status: 'success',
+            message: 'Church onboarding already completed.',
+            church: existingChurch,
+        });
+    }
     const key = cacheKeys.churchOnboardingDraft(superAdminId);
     const draft = await CacheService.get<ChurchOnboardingDraft>(key);
 
@@ -384,7 +394,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             },
         });
 
-        if (draft.serviceTimes!.length > 0) {
+        if ((draft.serviceTimes ?? []).length > 0) {
             await tx.serviceTime.createMany({
                 data: draft.serviceTimes!.map((serviceTime) => ({
                     churchId: created.id,

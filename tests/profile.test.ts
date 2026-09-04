@@ -88,12 +88,12 @@ describe('profile', () => {
             expect(res.body.status).toBe('success');
             expect(res.body.profile.fullName).toBe('Test Member');
 
-            const profile = await prisma.memberProfile.findUnique({ where: { userId: user.userId } });
+            const profile = await prisma.memberProfile.findUnique({ where: { memberId: user.userId } });
             expect(profile?.phoneNumber).toBe('+2348012345678');
             expect(profile?.gender).toBe('MALE');
 
-            const dbUser = await prisma.user.findUnique({ where: { id: user.userId } });
-            expect(dbUser?.fullName).toBe('Test Member');
+            const dbUser = await prisma.member.findUnique({ where: { id: user.userId } });
+            expect(dbUser?.email).toBe(user.email);
 
             expect(fakeRedis.has(cacheKeys.userMe(user.userId))).toBe(false);
 
@@ -189,8 +189,8 @@ describe('profile', () => {
         });
 
         it('200 — the same phone number may be used by two different users', async () => {
-            const other = await registerAndVerify();
-            const res = await completeProfile(other.accessToken, { ...validFields, phoneNumber: '+2348012345678' });
+            const otherUser = await createUser({ churchId: church.id }); await prisma.member.update({ where: { id: otherUser.id }, data: { status: 'APPROVED', role: 'MEMBER' } }); const otherToken = await accessTokenFor(otherUser.id, otherUser.email);
+            const res = await completeProfile(otherToken, { ...validFields, phoneNumber: '+2348012345678' });
             expect(res.status).toBe(200);
             expect(res.body.profile.phoneNumber).toBe('+2348012345678');
         });
