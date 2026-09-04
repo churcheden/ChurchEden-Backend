@@ -7,7 +7,8 @@ import { cloudflare } from '../src/config/cloudflare.js';
 import { env } from '../src/env.js';
 import { cacheKeys } from '../src/utils/cache.js';
 import { fakeRedis, resetFakes } from './helpers/fakes.js';
-import { authHeader, registerAndVerify } from './helpers/auth.js';
+import { authHeader, registerAndVerify, accessTokenFor } from './helpers/auth.js';
+import { createChurch, createUser } from './helpers/seed.js';
 import { resetDatabase } from './helpers/db.js';
 
 const validFields = {
@@ -37,7 +38,20 @@ describe('profile', () => {
     beforeEach(async () => {
         resetFakes();
         await resetDatabase();
-        user = await registerAndVerify();
+        const church = await createChurch();
+        const created = await createUser({ churchId: church.id });
+        await prisma.member.update({
+            where: { id: created.id },
+            data: { status: 'APPROVED', role: 'MEMBER' },
+        });
+        const accessToken = await accessTokenFor(created.id, created.email);
+        user = {
+            email: created.email,
+            password: 'Password123!',
+            userId: created.id,
+            accessToken,
+            refreshToken: 'fake-refresh-token',
+        };
         vi.spyOn(cloudflare, 'send').mockResolvedValue({} as never);
     });
 

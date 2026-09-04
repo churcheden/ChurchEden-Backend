@@ -149,7 +149,7 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                     prisma.church.updateMany({
                         where: { superAdminId: transaction.superAdminId },
                         data: {
-                            plan: 'PRO',
+                            plan: 'PLUS',
                             planStartedAt: paidAt,
                             planExpiresAt: new Date(paidAt.getTime() + SUBSCRIPTION_PERIOD_MS),
                             subscriptionStatus: 'ACTIVE',
@@ -230,7 +230,7 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                 await prisma.church.updateMany({
                     where: { superAdminId: superAdmin.id },
                     data: {
-                        plan: 'FREE',
+                        plan: 'EXPLORER',
                         planExpiresAt: expiryDate,
                         subscriptionStatus: 'CANCELED',
                     },
@@ -285,7 +285,7 @@ export const handlePaymentEvent = async (req: Request, res: Response) => {
                 await prisma.church.updateMany({
                     where: { superAdminId },
                     data: {
-                        plan: 'PRO',
+                        plan: 'PLUS',
                         planExpiresAt: newExpiry,
                     },
                 });

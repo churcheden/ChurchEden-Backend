@@ -59,9 +59,9 @@ enum ChurchLanguage {
 }
 
 enum ChurchPlan {
-  FREE
-  PRO
-  MAX
+  EXPLORER
+  PLUS
+  CORE
 }
 
 model SuperAdmin {
@@ -109,7 +109,7 @@ model Church {
   timeZone        String // IANA tz string, e.g. "Africa/Accra"
 
   logoUrl String? // R2 object URL
-  plan                   ChurchPlan @default(FREE)
+  plan                   ChurchPlan @default(EXPLORER)
   planStartedAt          DateTime?
   planExpiresAt          DateTime?
   subscriptionProcessor  String?  // "stripe" | "paypal"

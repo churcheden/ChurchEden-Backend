@@ -193,7 +193,7 @@ Subscription billing applies to the **church** (owned by a SuperAdmin).
 - Money is in **Ghanaian cedis (GHS)**, passed to Paystack as the minor unit via
   `SUBSCRIPTION_AMOUNT_KOBO` (default `2000`, i.e. GHS 20.00). Good to read from
   `.env.example` — the exact value is environment-configurable.
-- A SuperAdmin whose church already has a non-FREE plan gets
+- A SuperAdmin whose church already has a non-EXPLORER plan gets
   `409 ALREADY_PREMIUM` from `initialize`.
 - **Webhook signatures:** HMAC-SHA512 of the raw request body with
   `PAYSTACK_SECRET_KEY` in the `x-paystack-signature` header. If you self-test

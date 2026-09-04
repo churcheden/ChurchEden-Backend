@@ -138,7 +138,7 @@ class PaymentService {
             prisma.church.updateMany({
                 where: { superAdminId },
                 data: {
-                    plan: 'PRO',
+                    plan: 'PLUS',
                     planStartedAt: new Date(),
                     planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
                     subscriptionProcessor: 'paystack',
@@ -198,7 +198,7 @@ class PaymentService {
         const updatedChurch = await prisma.church.update({
             where: { superAdminId },
             data: {
-                plan: 'FREE',
+                plan: 'EXPLORER',
                 planExpiresAt: new Date(),
                 subscriptionStatus: 'CANCELED',
             },

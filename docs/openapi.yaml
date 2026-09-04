@@ -1324,6 +1324,9 @@ components:
     SubscriptionStatus:
       type: string
       enum: [ACTIVE, PAST_DUE, CANCELED, TRIALING]
+    ChurchPlan:
+      type: string
+      enum: [EXPLORER, PLUS, CORE]
     ServiceTime:
       type: object
       required: [label, dayOfWeek, time]
