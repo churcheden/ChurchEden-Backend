@@ -793,9 +793,13 @@ export const exchangeGoogleToken = catchAsync(async(req: Request, res: Response)
     }
 
     if (!member) {
+        const randomPassword = crypto.randomBytes(32).toString('hex');
+        const hashedPassword = await hashPassword(randomPassword);
+
         member = await prisma.member.create({
             data: {
                 email,
+                password: hashedPassword,
                 googleId: payload.sub,
                 isVerified: true,
                 ...(churchId ? { churchId } : {}),

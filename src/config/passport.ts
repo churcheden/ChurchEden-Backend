@@ -45,10 +45,16 @@ export const googleStrategy = new GoogleStrategy({
         if (platform === 'mobile') {
             let member = await prisma.member.findUnique({ where: { googleId } });
             if (!member) {
+                // Generate a random hashed password so the password column is
+                // never left NULL for Google-authenticated members.
+                const randomPassword = randomBytes(32).toString('hex');
+                const hashedPassword = await hashPassword(randomPassword);
+
                 member = await prisma.member.upsert({
                     where: { email },
                     create: {
                         email,
+                        password: hashedPassword,
                         googleId,
                         isVerified: true,
                         churchId: null,
