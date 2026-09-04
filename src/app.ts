@@ -22,8 +22,31 @@ const app = express();
 
 app.set('trust proxy', 1);
 
+const allowedOrigins = [
+    env.FRONTEND_URL,
+    'https://churcheden.app',
+].filter((o): o is string => Boolean(o));
+
 const corsOptions: cors.CorsOptions = {
-    origin: env.FRONTEND_URL || 'https://churcheden.app',
+    origin: (origin, callback) => {
+        // React Native / Expo native HTTP has no Origin header — always allow
+        if (!origin) return callback(null, true);
+        // Allow any explicitly listed production origin
+        if (allowedOrigins.some(o => origin === o || origin.startsWith(o))) {
+            return callback(null, true);
+        }
+        // Allow localhost and Expo tunnel origins during development
+        if (
+            env.NODE_ENV === 'development' &&
+            (origin.startsWith('http://localhost:') ||
+                origin.startsWith('https://localhost:') ||
+                origin.includes('.exp.direct') ||
+                origin.includes('.ngrok'))
+        ) {
+            return callback(null, true);
+        }
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Authorization', 'Content-Type', 'x-client-platform'],

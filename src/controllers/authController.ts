@@ -571,7 +571,7 @@ export const refreshToken = catchAsync(async(req: Request, res: Response) => {
 export const getGoogleAuthUrl = catchAsync(async(req: Request, res: Response) => {
     const platform = (req.query.platform as string) || (req.headers['x-client-platform'] as string) || 'web';
     const redirect = typeof req.query.redirect === 'string' && isAllowedMobileCallback(req.query.redirect)
-        ? encodeURIComponent(req.query.redirect)
+        ? req.query.redirect   // keep raw — buildOAuthState embeds it; parseOAuthState decodes on callback
         : '';
     const url = `${req.protocol}://${req.get('host')}/api/v1/auth/google?platform=${encodeURIComponent(platform)}${
         redirect ? `&redirect=${redirect}` : ''

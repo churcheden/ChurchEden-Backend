@@ -25,5 +25,8 @@ export const parseOAuthState = (state?: string): OAuthState => {
     if (sep === -1) {
         return { platform: state, redirect: '' };
     }
-    return { platform: state.slice(0, sep), redirect: state.slice(sep + 1) };
+    const rawRedirect = state.slice(sep + 1);
+    let redirect = rawRedirect;
+    try { redirect = decodeURIComponent(rawRedirect); } catch { /* keep raw if not valid percent-encoding */ }
+    return { platform: state.slice(0, sep), redirect };
 };
