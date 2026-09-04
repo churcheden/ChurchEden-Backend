@@ -189,7 +189,7 @@ describe('profile', () => {
         });
 
         it('200 — the same phone number may be used by two different users', async () => {
-            const otherUser = await createUser({ churchId: church.id }); await prisma.member.update({ where: { id: otherUser.id }, data: { status: 'APPROVED', role: 'MEMBER' } }); const otherToken = await accessTokenFor(otherUser.id, otherUser.email);
+            const otherUser = await createUser(); await prisma.member.update({ where: { id: otherUser.id }, data: { status: 'APPROVED', role: 'MEMBER' } }); const otherToken = await accessTokenFor(otherUser.id, otherUser.email);
             const res = await completeProfile(otherToken, { ...validFields, phoneNumber: '+2348012345678' });
             expect(res.status).toBe(200);
             expect(res.body.profile.phoneNumber).toBe('+2348012345678');
