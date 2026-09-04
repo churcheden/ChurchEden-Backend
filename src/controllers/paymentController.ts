@@ -28,7 +28,7 @@ export const initializePayment = catchAsync(async(req: AuthenticatedRequest, res
         throw new AppError('Admin not found!', 404, 'USER_NOT_FOUND');
     };
 
-    if (superAdmin.church?.plan && superAdmin.church.plan !== 'FREE') {
+    if (superAdmin.church?.plan && superAdmin.church.plan !== 'EXPLORER') {
         throw new AppError('You already have an active subscription!', 409, 'ALREADY_PREMIUM');
     }
 
