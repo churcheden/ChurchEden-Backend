@@ -88,9 +88,9 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id });
             expect(res.status).toBe(201);
-            expect(res.body.membership.status).toBe('PENDING');
-            expect(res.body.membership.role).toBe('MEMBER');
-            expect(res.body.membership.church.name).toBe('Grace Assembly');
+            expect(res.body.member.status).toBe('PENDING');
+            expect(res.body.member.role).toBe('MEMBER');
+            expect(res.body.member.church.name).toBe('Grace Assembly');
             expect(fakeRedis.has(cacheKeys.userMe(applicant.userId))).toBe(false);
         });
 
@@ -118,7 +118,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id })
+                .send({ membershipId: submit.body.member.id })
                 .expect(200);
 
             const res = await request(app)
@@ -135,7 +135,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            const membershipId = submit.body.membership.id;
+            const membershipId = submit.body.member.id;
 
             await request(app)
                 .post('/api/v1/join-requests/reject')
@@ -148,8 +148,8 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id });
             expect(resubmit.status).toBe(200);
-            expect(resubmit.body.membership.status).toBe('PENDING');
-            expect(resubmit.body.membership.rejectionReason).toBeNull();
+            expect(resubmit.body.member.status).toBe('PENDING');
+            expect(resubmit.body.member.rejectionReason).toBeNull();
 
             const row = await prisma.churchMembership.findUnique({ where: { id: membershipId } });
             expect(row?.status).toBe('PENDING');
@@ -178,7 +178,7 @@ describe('join-requests', () => {
                 .set(authHeader(admin.accessToken));
             expect(res.status).toBe(200);
             expect(res.body.requests).toHaveLength(1);
-            expect(res.body.requests[0].id).toBe(submit.body.membership.id);
+            expect(res.body.requests[0].id).toBe(submit.body.member.id);
             expect(res.body.requests[0].user.email).toBe(applicant.email);
             expect(res.body.requests[0].church.id).toBe(church.id);
         });
@@ -220,7 +220,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/reject')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id, rejectionReason: 'Capacity full' })
+                .send({ membershipId: submit.body.member.id, rejectionReason: 'Capacity full' })
                 .expect(200);
 
             const res = await request(app)
@@ -265,13 +265,13 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(200);
-            expect(res.body.membership.status).toBe('APPROVED');
+            expect(res.body.member.status).toBe('APPROVED');
             expect(fakeRedis.has(cacheKeys.userMe(applicant.userId))).toBe(false);
 
             const row = await prisma.churchMembership.findUnique({
-                where: { id: submit.body.membership.id },
+                where: { id: submit.body.member.id },
             });
             expect(row?.status).toBe('APPROVED');
         });
@@ -285,13 +285,13 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id })
+                .send({ membershipId: submit.body.member.id })
                 .expect(200);
 
             const again = await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(again.status).toBe(200);
             expect(again.body.message).toMatch(/already been approved/);
         });
@@ -306,7 +306,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(applicant.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
@@ -325,7 +325,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(memberTom.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
@@ -341,7 +341,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(otherAdmin.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
         });
@@ -368,12 +368,12 @@ describe('join-requests', () => {
                 .post('/api/v1/join-requests/reject')
                 .set(authHeader(admin.accessToken))
                 .send({
-                    membershipId: submit.body.membership.id,
+                    membershipId: submit.body.member.id,
                     rejectionReason: 'Request does not match our membership requirements',
                 });
             expect(res.status).toBe(200);
-            expect(res.body.membership.status).toBe('REJECTED');
-            expect(res.body.membership.rejectionReason).toBe('Request does not match our membership requirements');
+            expect(res.body.member.status).toBe('REJECTED');
+            expect(res.body.member.rejectionReason).toBe('Request does not match our membership requirements');
         });
 
         it('200 — stores no reason when omitted', async () => {
@@ -386,9 +386,9 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/reject')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(200);
-            expect(res.body.membership.rejectionReason).toBeNull();
+            expect(res.body.member.rejectionReason).toBeNull();
         });
 
         it('200 — approving a previously rejected request clears the reason', async () => {
@@ -397,7 +397,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            const membershipId = submit.body.membership.id;
+            const membershipId = submit.body.member.id;
             await request(app)
                 .post('/api/v1/join-requests/reject')
                 .set(authHeader(admin.accessToken))
@@ -409,8 +409,8 @@ describe('join-requests', () => {
                 .set(authHeader(admin.accessToken))
                 .send({ membershipId });
             expect(res.status).toBe(200);
-            expect(res.body.membership.status).toBe('APPROVED');
-            expect(res.body.membership.rejectionReason).toBeNull();
+            expect(res.body.member.status).toBe('APPROVED');
+            expect(res.body.member.rejectionReason).toBeNull();
         });
 
         it('400 — VALIDATION_FAILED for an overly long reason', async () => {
@@ -423,7 +423,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/reject')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id, rejectionReason: 'x'.repeat(501) });
+                .send({ membershipId: submit.body.member.id, rejectionReason: 'x'.repeat(501) });
             expect(res.status).toBe(400);
             expect(res.body.code).toBe('VALIDATION_FAILED');
         });
@@ -436,7 +436,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            return submit.body.membership.id;
+            return submit.body.member.id;
         };
 
         it('200 — bans the user and clears the requester /me cache', async () => {
@@ -447,9 +447,9 @@ describe('join-requests', () => {
                 .set(authHeader(admin.accessToken))
                 .send({ membershipId, banReason: 'Repeated spam requests' });
             expect(res.status).toBe(200);
-            expect(res.body.membership.isBanned).toBe(true);
-            expect(res.body.membership.banReason).toBe('Repeated spam requests');
-            expect(res.body.membership.status).toBe('REJECTED');
+            expect(res.body.member.isBanned).toBe(true);
+            expect(res.body.member.banReason).toBe('Repeated spam requests');
+            expect(res.body.member.status).toBe('REJECTED');
 
             const row = await prisma.churchMembership.findUnique({ where: { id: membershipId } });
             expect(row?.isBanned).toBe(true);
@@ -521,7 +521,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            const membershipId = submit.body.membership.id;
+            const membershipId = submit.body.member.id;
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
@@ -533,16 +533,16 @@ describe('join-requests', () => {
                 .set(authHeader(admin.accessToken))
                 .send({ membershipId });
             expect(res.status).toBe(200);
-            expect(res.body.membership.isBanned).toBe(false);
-            expect(res.body.membership.banReason).toBeNull();
-            expect(res.body.membership.bannedAt).toBeNull();
+            expect(res.body.member.isBanned).toBe(false);
+            expect(res.body.member.banReason).toBeNull();
+            expect(res.body.member.bannedAt).toBeNull();
 
             const resubmit = await request(app)
                 .post('/api/v1/join-requests')
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id });
             expect(resubmit.status).toBe(200);
-            expect(resubmit.body.membership.status).toBe('PENDING');
+            expect(resubmit.body.member.status).toBe('PENDING');
         });
 
         it('403 — FORBIDDEN for the banned user themselves', async () => {
@@ -551,7 +551,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            const membershipId = submit.body.membership.id;
+            const membershipId = submit.body.member.id;
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
@@ -576,7 +576,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/unban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
             expect(res.status).toBe(200);
             expect(res.body.message).toMatch(/not banned/);
         });
@@ -592,7 +592,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/ban')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id, banReason: 'Spam' })
+                .send({ membershipId: submit.body.member.id, banReason: 'Spam' })
                 .expect(200);
 
             const res = await request(app)
@@ -611,7 +611,7 @@ describe('join-requests', () => {
                 .set(authHeader(applicant.accessToken))
                 .send({ churchId: church.id })
                 .expect(201);
-            const membershipId = submit.body.membership.id;
+            const membershipId = submit.body.member.id;
 
             const res = await request(app)
                 .post('/api/v1/join-requests/cancel')
@@ -664,7 +664,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/cancel')
                 .set(authHeader(other.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
 
             expect(res.status).toBe(403);
             expect(res.body.code).toBe('FORBIDDEN');
@@ -688,7 +688,7 @@ describe('join-requests', () => {
             await request(app)
                 .post('/api/v1/join-requests/approve')
                 .set(authHeader(admin.accessToken))
-                .send({ membershipId: submit.body.membership.id })
+                .send({ membershipId: submit.body.member.id })
                 .expect(200);
 
             const res = await request(app)
