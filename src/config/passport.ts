@@ -1,7 +1,6 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { randomBytes } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { env } from '../env.js';
 import { hashPassword } from '../utils/password.js';
@@ -44,29 +43,23 @@ export const googleStrategy = new GoogleStrategy({
             'web';
 
         if (platform === 'mobile') {
-            let member = await prisma.member.findUnique({ where: { googleId } });
-
-            if (!member) {
-                member = await prisma.member.findUnique({ where: { email } });
-                if (member) {
-                    member = await prisma.member.update({
-                        where: { id: member.id },
-                        data: { googleId, isVerified: true },
-                    });
-                }
-            }
-
-            if (!member) {
-                const memberData: Prisma.MemberUncheckedCreateInput = {
+            // Use upsert keyed on email to be idempotent: concurrent OAuth
+            // callbacks (e.g. user double-tapped) won't race into a P2002
+            // unique-constraint error on googleId or email.
+            const member = await prisma.member.upsert({
+                where: { email },
+                create: {
                     email,
                     googleId,
                     isVerified: true,
-                    // No church yet — a brand-new member links one via the
-                    // join-request flow.
                     churchId: null,
-                };
-                member = await prisma.member.create({ data: memberData });
-            }
+                },
+                update: {
+                    // Patch googleId if this email existed without one
+                    googleId: googleId,
+                    isVerified: true,
+                },
+            });
 
             return done(null, { ...member, accountType: 'MEMBER' as const });
         }

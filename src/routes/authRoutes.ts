@@ -62,9 +62,20 @@ router.get('/google/callback',
             ? `${redirect || 'churcheden://auth/callback'}?error=auth_failed`
             : `${env.FRONTEND_URL}/onboarding/sign-in?error=auth_failed`;
 
-        passport.authenticate('google', {
-            session: false,
-            failureRedirect,
+        // Use the callback form of passport.authenticate so that OAuth token
+        // errors (e.g. TokenError: Bad Request when Google rejects the code
+        // exchange) are caught here and redirected to the failure URL instead
+        // of falling through to the global JSON error handler and showing raw
+        // JSON in the user's browser.
+        passport.authenticate('google', { session: false }, (err: Error | null, user: Express.User | false) => {
+            if (err || !user) {
+                return res.redirect(failureRedirect);
+            }
+            // Attach user so googleCallback can read req.user.
+            // Cast through unknown first — Request and the index-signature type
+            // don't structurally overlap, so a direct cast is rejected by TS.
+            (req as unknown as { user: Express.User }).user = user;
+            next();
         })(req, res, next);
     },
     googleCallback as RequestHandler
