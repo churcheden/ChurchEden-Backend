@@ -22,6 +22,13 @@ const createChurch = async (name: string) => {
             email: `${randomUUID()}@church.test`,
             primaryLanguage: 'ENGLISH',
             timeZone: 'Africa/Lagos',
+            superAdmin: {
+                create: {
+                    email: `${randomUUID()}@admin.test`,
+                    fullName: 'Admin ' + name,
+                    isVerified: true,
+                },
+            },
         },
     });
     return church;
