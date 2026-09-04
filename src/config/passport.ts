@@ -1,9 +1,11 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { prisma } from './prisma.js';
 import { env } from '../env.js';
 import { hashPassword } from '../utils/password.js';
+import { parseOAuthState } from '../utils/oauthState.js';
 
 export const googleStrategy = new GoogleStrategy({
     clientID: env.GOOGLE_CLIENT_ID,
@@ -24,9 +26,21 @@ export const googleStrategy = new GoogleStrategy({
         // a SuperAdmin. A brand-new mobile user gets a Member row immediately
         // (churchId is optional) and links a church later via the join-request
         // flow. This mirrors the ID-token exchange in exchangeGoogleToken.
+        //
+        // The platform is carried through Google's `state` parameter, so it is
+        // available on the callback (req.query.platform is only set on the
+        // initial /auth/google authorize request, not on the redirect back).
+        let rawState = typeof req?.query?.state === 'string' ? req.query.state : '';
+        try {
+            rawState = decodeURIComponent(rawState);
+        } catch {
+            /* keep the raw state if it's not valid percent-encoding */
+        }
+        const { platform: statePlatform } = parseOAuthState(rawState);
         const platform =
             (req?.query?.platform as string) ||
             (req?.headers?.['x-client-platform'] as string) ||
+            statePlatform ||
             'web';
 
         if (platform === 'mobile') {
@@ -43,13 +57,15 @@ export const googleStrategy = new GoogleStrategy({
             }
 
             if (!member) {
-                member = await prisma.member.create({
-                    data: {
-                        email,
-                        googleId,
-                        isVerified: true,
-                    },
-                });
+                const memberData: Prisma.MemberUncheckedCreateInput = {
+                    email,
+                    googleId,
+                    isVerified: true,
+                    // No church yet — a brand-new member links one via the
+                    // join-request flow.
+                    churchId: null,
+                };
+                member = await prisma.member.create({ data: memberData });
             }
 
             return done(null, { ...member, accountType: 'MEMBER' as const });
