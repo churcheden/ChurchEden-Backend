@@ -201,7 +201,7 @@ model MemberProfile {
   completedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@map("MemberProfile")
+  @@map("MemberProfiles")
 }
 
 model SuperAdminRefreshToken {
