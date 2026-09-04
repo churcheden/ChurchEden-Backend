@@ -151,7 +151,7 @@ describe('join-requests', () => {
             expect(resubmit.body.member.status).toBe('PENDING');
             expect(resubmit.body.member.rejectionReason).toBeNull();
 
-            const row = await prisma.churchMembership.findUnique({ where: { id: membershipId } });
+            const row = await prisma.member.findUnique({ where: { id: membershipId } });
             expect(row?.status).toBe('PENDING');
             expect(row?.rejectionReason).toBeNull();
         });
@@ -179,7 +179,7 @@ describe('join-requests', () => {
             expect(res.status).toBe(200);
             expect(res.body.requests).toHaveLength(1);
             expect(res.body.requests[0].id).toBe(submit.body.member.id);
-            expect(res.body.requests[0].user.email).toBe(applicant.email);
+            expect(res.body.requests[0].email).toBe(applicant.email);
             expect(res.body.requests[0].church.id).toBe(church.id);
         });
 
@@ -270,7 +270,7 @@ describe('join-requests', () => {
             expect(res.body.member.status).toBe('APPROVED');
             expect(fakeRedis.has(cacheKeys.userMe(applicant.userId))).toBe(false);
 
-            const row = await prisma.churchMembership.findUnique({
+            const row = await prisma.member.findUnique({
                 where: { id: submit.body.member.id },
             });
             expect(row?.status).toBe('APPROVED');
@@ -313,8 +313,8 @@ describe('join-requests', () => {
 
         it('403 — FORBIDDEN for an APPROVED MEMBER of the same church', async () => {
             const memberTom = await registerAndVerify();
-            await prisma.churchMembership.create({
-                data: { userId: memberTom.userId, churchId: church.id, role: 'MEMBER', status: 'APPROVED' },
+            await prisma.member.create({
+                data: { email: memberTom.email, churchId: church.id, role: 'MEMBER', status: 'APPROVED' },
             });
             const submit = await request(app)
                 .post('/api/v1/join-requests')
@@ -451,7 +451,7 @@ describe('join-requests', () => {
             expect(res.body.member.banReason).toBe('Repeated spam requests');
             expect(res.body.member.status).toBe('REJECTED');
 
-            const row = await prisma.churchMembership.findUnique({ where: { id: membershipId } });
+            const row = await prisma.member.findUnique({ where: { id: membershipId } });
             expect(row?.isBanned).toBe(true);
             expect(row?.banReason).toBe('Repeated spam requests');
             expect(row?.bannedAt).not.toBeNull();
@@ -621,7 +621,7 @@ describe('join-requests', () => {
             expect(res.status).toBe(200);
             expect(res.body.status).toBe('success');
             // Gone from the admin PENDING dashboard entirely.
-            expect(await prisma.churchMembership.findUnique({ where: { id: membershipId } })).toBeNull();
+            expect(await prisma.member.findUnique({ where: { id: membershipId } })).toBeNull();
         });
 
         it('200 — after cancelling, the member can apply to a different church', async () => {
@@ -638,7 +638,7 @@ describe('join-requests', () => {
                 .expect(201);
 
             // Cancel the first (church) request, keep the new one (churchOther).
-            const toCancel = await prisma.churchMembership.findFirst({
+            const toCancel = await prisma.member.findFirst({
                 where: { churchId: church.id },
                 select: { id: true },
             });
@@ -649,7 +649,7 @@ describe('join-requests', () => {
                 .send({ membershipId: toCancel!.id });
             expect(cancel.status).toBe(200);
 
-            expect(await prisma.churchMembership.count({ where: { churchId: church.id } })).toBe(0);
+            expect(await prisma.member.count({ where: { churchId: church.id } })).toBe(0);
             expect(otherSubmit.body.membership.status).toBe('PENDING');
         });
 
@@ -694,7 +694,7 @@ describe('join-requests', () => {
             const res = await request(app)
                 .post('/api/v1/join-requests/cancel')
                 .set(authHeader(applicant.accessToken))
-                .send({ membershipId: submit.body.membership.id });
+                .send({ membershipId: submit.body.member.id });
 
             expect(res.status).toBe(409);
             expect(res.body.code).toBe('REQUEST_NOT_PENDING');
