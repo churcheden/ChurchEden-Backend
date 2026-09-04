@@ -7,12 +7,15 @@ import { resetDatabase } from './helpers/db.js';
 
 type VerifyResult = { err: Error | null; user: any };
 
-const runVerify = (profile: { id: string; emails?: { value: string }[]; displayName?: string | null }): Promise<VerifyResult> =>
+const runVerify = (
+    profile: { id: string; emails?: { value: string }[]; displayName?: string | null },
+    state: string = 'mobile'
+): Promise<VerifyResult> =>
     new Promise((resolve, reject) => {
         try {
             googleStrategy._verify.call(
                 googleStrategy,
-                {},
+                { query: { state } } as any,
                 'access-token',
                 'refresh-token',
                 {
@@ -33,80 +36,68 @@ const profileFor = (email: string, overrides: Record<string, unknown> = {}) => (
     ...overrides,
 });
 
-describe('googleStrategy._verify', () => {
+describe('googleStrategy._verify (mobile path)', () => {
     beforeEach(async () => {
         resetFakes();
         await resetDatabase();
     });
 
-    it('creates a new verified GOOGLE user with a random hashed password', async () => {
+    it('creates a new verified Member for mobile Google login', async () => {
         const email = `${randomUUID()}@gmail.com`;
-        const result = await runVerify(profileFor(email));
+        const result = await runVerify(profileFor(email), 'mobile');
 
         expect(result.err).toBeNull();
-        const user = await prisma.user.findUnique({ where: { id: result.user.id } });
-        expect(user).not.toBeNull();
-        expect(user!.email).toBe(email);
-        expect(user!.googleId).toBeTruthy();
-        expect(user!.loginProvider).toBe('GOOGLE');
-        expect(user!.isVerified).toBe(true);
-        expect(user!.fullName).toBe('Jane Doe');
-
-        const stored = await prisma.user.findUniqueOrThrow({ where: { id: result.user.id } });
-        expect(stored.password!.startsWith('$2')).toBe(true);
+        const member = await prisma.member.findUnique({ where: { id: result.user.id } });
+        expect(member).not.toBeNull();
+        expect(member!.email).toBe(email);
+        expect(member!.googleId).toBeTruthy();
+        expect(member!.isVerified).toBe(true);
     });
 
-    it('returns the existing user when the googleId is already linked', async () => {
-        const seeded = await prisma.user.create({
+    it('returns the existing Member when the googleId is already linked', async () => {
+        const seeded = await prisma.member.create({
             data: {
                 email: `${randomUUID()}@gmail.com`,
                 googleId: 'google-pre-existing',
-                fullName: 'Linked User',
-                loginProvider: 'GOOGLE',
                 isVerified: true,
-                password: 'irrelevant',
             },
         });
 
-        const result = await runVerify(profileFor(`${randomUUID()}@gmail.com`, { id: 'google-pre-existing' }));
+        const result = await runVerify(profileFor(`${randomUUID()}@gmail.com`, { id: 'google-pre-existing' }), 'mobile');
         expect(result.err).toBeNull();
         expect(result.user.id).toBe(seeded.id);
 
-        const after = await prisma.user.findUniqueOrThrow({ where: { id: seeded.id } });
-        expect(after.fullName).toBe('Linked User');
-        expect(after.loginProvider).toBe('GOOGLE');
+        const after = await prisma.member.findUniqueOrThrow({ where: { id: seeded.id } });
+        expect(after.googleId).toBe('google-pre-existing');
     });
 
-    it('links an existing email-only user to Google and verifies them', async () => {
+    it('links an existing email-only Member to Google and verifies them', async () => {
         const email = `${randomUUID()}@gmail.com`;
-        const seeded = await prisma.user.create({
+        const seeded = await prisma.member.create({
             data: {
                 email,
                 password: 'some-hash',
-                fullName: 'Email User',
-                loginProvider: 'EMAIL',
                 isVerified: false,
             },
         });
 
-        const result = await runVerify(profileFor(email));
+        const result = await runVerify(profileFor(email), 'mobile');
         expect(result.err).toBeNull();
         expect(result.user.id).toBe(seeded.id);
 
-        const after = await prisma.user.findUniqueOrThrow({ where: { id: seeded.id } });
+        const after = await prisma.member.findUniqueOrThrow({ where: { id: seeded.id } });
         expect(after.googleId).toBeTruthy();
-        expect(after.loginProvider).toBe('GOOGLE');
         expect(after.isVerified).toBe(true);
     });
 
     it('fails with an error when the Google profile has no email', async () => {
-        const result = await runVerify({ id: `google-${randomUUID()}`, email: undefined as any, emails: undefined });
+        const result = await runVerify({ id: `google-${randomUUID()}`, email: undefined as any, emails: undefined }, 'mobile');
         expect(result.err?.message).toBe('No email found in Google profile!');
         expect(result.user).toBeUndefined();
     });
 
     it('fails with an error when the Google profile has an empty emails array', async () => {
-        const result = await runVerify({ id: `google-${randomUUID()}`, emails: [] });
+        const result = await runVerify({ id: `google-${randomUUID()}`, emails: [] }, 'mobile');
         expect(result.err?.message).toBe('No email found in Google profile!');
         expect(result.user).toBeUndefined();
     });

@@ -43,23 +43,22 @@ export const googleStrategy = new GoogleStrategy({
             'web';
 
         if (platform === 'mobile') {
-            // Use upsert keyed on email to be idempotent: concurrent OAuth
-            // callbacks (e.g. user double-tapped) won't race into a P2002
-            // unique-constraint error on googleId or email.
-            const member = await prisma.member.upsert({
-                where: { email },
-                create: {
-                    email,
-                    googleId,
-                    isVerified: true,
-                    churchId: null,
-                },
-                update: {
-                    // Patch googleId if this email existed without one
-                    googleId: googleId,
-                    isVerified: true,
-                },
-            });
+            let member = await prisma.member.findUnique({ where: { googleId } });
+            if (!member) {
+                member = await prisma.member.upsert({
+                    where: { email },
+                    create: {
+                        email,
+                        googleId,
+                        isVerified: true,
+                        churchId: null,
+                    },
+                    update: {
+                        googleId: googleId,
+                        isVerified: true,
+                    },
+                });
+            }
 
             return done(null, { ...member, accountType: 'MEMBER' as const });
         }

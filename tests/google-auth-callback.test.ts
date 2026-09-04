@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../src/app.js';
 import { prisma } from '../src/config/prisma.js';
 import { env } from '../src/env.js';
-import { emailServiceMock, resetFakes } from './helpers/fakes.js';
+import { resetFakes } from './helpers/fakes.js';
 import { resetDatabase } from './helpers/db.js';
 
 vi.mock('../src/config/passport.js', () => {
@@ -14,9 +14,16 @@ vi.mock('../src/config/passport.js', () => {
         passport: {
             initialize: () => (_req: unknown, _res: unknown, next: () => void) => next(),
             use: () => {},
-            authenticate: () => (req: { user?: unknown }, _res: unknown, next: () => void) => {
-                req.user = fakeUser;
-                next();
+            authenticate: (_strategy: string, _options: unknown, callback?: (err: Error | null, user: unknown) => void) => {
+                if (typeof callback === 'function') {
+                    return (req: { user?: unknown }, _res: unknown, next: () => void) => {
+                        callback(null, fakeUser as Express.User);
+                    };
+                }
+                return (req: { user?: unknown }, _res: unknown, next: () => void) => {
+                    req.user = fakeUser;
+                    next();
+                };
             },
             __setUser: (user: unknown) => {
                 fakeUser = user;
@@ -37,18 +44,15 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
         setGoogleUser(null);
     });
 
-    it('redirects to the app callback, returns tokens in the URL, sends a welcome email and reports profile incomplete for a new user', async () => {
-        const created = await prisma.user.create({
+    it('redirects to the app callback, returns tokens in the URL, and reports profile incomplete for a new member', async () => {
+        const created = await prisma.member.create({
             data: {
                 email: `${randomUUID()}@gmail.com`,
                 googleId: `google-${randomUUID()}`,
-                fullName: 'Jane Doe',
-                loginProvider: 'GOOGLE',
                 isVerified: true,
-                password: 'irrelevant',
             },
         });
-        setGoogleUser({ id: created.id, email: created.email });
+        setGoogleUser({ id: created.id, email: created.email, accountType: 'MEMBER' });
 
         const res = await request(app).get('/api/v1/auth/google/callback?state=mobile');
         expect(res.status).toBe(302);
@@ -57,31 +61,19 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
         );
         expect(res.headers.location).toMatch('refreshToken=');
         expect(res.headers.location).toMatch('profileComplete=false');
-
-        expect(emailServiceMock.sendWelcomeEmail).toHaveBeenCalledTimes(1);
-        expect(emailServiceMock.sendWelcomeEmail.mock.calls[0][0]).toMatchObject({
-            firstName: 'Jane',
-            fullName: 'Jane Doe',
-            email: created.email,
-            signInUrl: `${env.FRONTEND_URL}/onboarding/sign-in`,
-        });
     });
 
-    it('reports profile complete when the user already has a member profile and skips the welcome email for an old account', async () => {
-        const created = await prisma.user.create({
+    it('reports profile complete when the member already has a member profile', async () => {
+        const created = await prisma.member.create({
             data: {
                 email: `${randomUUID()}@gmail.com`,
                 googleId: `google-${randomUUID()}`,
-                fullName: 'Old User',
-                loginProvider: 'GOOGLE',
                 isVerified: true,
-                password: 'irrelevant',
-                createdAt: new Date(Date.now() - 30 * 60 * 1000),
             },
         });
         await prisma.memberProfile.create({
             data: {
-                userId: created.id,
+                memberId: created.id,
                 fullName: 'Old User',
                 dateOfBirth: new Date('1990-01-01'),
                 gender: 'FEMALE',
@@ -92,18 +84,16 @@ describe('GET /api/v1/auth/google/callback (googleCallback, passport injects req
                 maritalStatus: 'SINGLE',
             },
         });
-        setGoogleUser({ id: created.id, email: created.email });
+        setGoogleUser({ id: created.id, email: created.email, accountType: 'MEMBER' });
 
         const res = await request(app).get('/api/v1/auth/google/callback?state=mobile');
         expect(res.status).toBe(302);
         expect(res.headers.location).toMatch('profileComplete=true');
-        expect(emailServiceMock.sendWelcomeEmail).not.toHaveBeenCalled();
     });
 
     it('redirects to the failure URL when no user is in the request', async () => {
         const res = await request(app).get('/api/v1/auth/google/callback');
         expect(res.status).toBe(302);
-        expect(res.headers.location).toBe(`${env.FRONTEND_URL}/sign-in?error=auth_failed`);
-        expect(emailServiceMock.sendWelcomeEmail).not.toHaveBeenCalled();
+        expect(res.headers.location).toBe(`${env.FRONTEND_URL}/onboarding/sign-in?error=auth_failed`);
     });
 });
