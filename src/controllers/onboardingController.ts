@@ -9,6 +9,8 @@ import type { AuthenticatedRequest } from '../middleware/auth.middleware.js';
 import { wideLogger } from '../utils/wideLogger.js';
 import { catchAsync } from '../utils/catchAsync.js';
 import { AppError } from '../utils/AppError.js';
+import { normalizePhoneToE164 } from '../utils/phone.js';
+import { completeProfileSchema } from '../schema/onboarding.schema.js';
 import { CacheService, cacheKeys } from '../utils/cache.js';
 import {
     CHURCH_ONBOARDING_DRAFT_TTL_SECONDS,
@@ -19,6 +21,140 @@ import {
     type ChurchOnboardingDraft,
 } from '../schema/onboarding.schema.js';
 import { PREDEFINED_MINISTRIES } from '../data/predefinedMinistries.js';
+
+type CompleteProfileInput = ReturnType<typeof completeProfileSchema.parse>;
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+
+const EXT_BY_MIME: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/heic': 'heic',
+};
+
+const uploadProfilePhoto = async (userId: string, file: Express.Multer.File): Promise<string> => {
+    const ext = EXT_BY_MIME[file.mimetype] ?? file.originalname.split('.').pop()?.toLowerCase() ?? '';
+    if (!/^[a-z0-9]{1,8}$/i.test(ext)) {
+        throw new AppError('Unsupported image type.', 400, 'INVALID_PHOTO');
+    }
+
+    const key = `member-photos/${userId}/${randomUUID()}.${ext}`;
+
+    await cloudflare.send(new PutObjectCommand({
+        Bucket: env.CLOUDFLARE_R2_BUCKET_NAME,
+        Key: key,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+    }));
+
+    return `${env.CLOUDFLARE_R2_PUBLIC_URL}/${key}`;
+};
+
+// POST /api/v1/onboarding/complete-profile
+export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'complete_profile');
+    const userId = req.user?.id;
+
+    if(!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    };
+
+    if (req.user?.accountType !== 'MEMBER') {
+        throw new AppError('Only church members can complete a profile.', 403, 'FORBIDDEN');
+    }
+
+    wideLogger.addCtx('user_id', userId);
+
+    const data = req.body as CompleteProfileInput;
+
+    if(req.file) {
+        if(!req.file.mimetype.startsWith('image/')) {
+            wideLogger.addCtx('complete_profile_result', 'invalid_photo_type');
+            throw new AppError('Profile photo must be an image.', 400, 'INVALID_PHOTO');
+        };
+        if(req.file.size > MAX_PHOTO_BYTES) {
+            wideLogger.addCtx('complete_profile_result', 'photo_too_large');
+            throw new AppError('Profile photo must be 5MB or smaller.', 400, 'PHOTO_TOO_LARGE');
+        };
+    }
+
+    const normalizedPhone = normalizePhoneToE164(data.phoneNumber, data.phoneCountryCode);
+    if (!normalizedPhone) {
+        wideLogger.addCtx('complete_profile_result', 'invalid_phone');
+        throw new AppError('Invalid phone number', 400, 'INVALID_PHONE');
+    }
+
+    const profilePhotoUrl = req.file
+        ? await uploadProfilePhoto(userId, req.file)
+        : undefined;
+
+    const profile = await prisma.memberProfile.upsert({
+        where: { memberId: userId },
+        create: {
+            memberId: userId,
+            fullName: data.fullName,
+            dateOfBirth: data.dateOfBirth,
+            gender: data.gender,
+            phoneNumber: normalizedPhone,
+            contactEmail: data.contactEmail,
+            city: data.city,
+            address: data.address,
+            maritalStatus: data.maritalStatus,
+            occupation: data.occupation ?? null,
+            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+        },
+        update: {
+            fullName: data.fullName,
+            dateOfBirth: data.dateOfBirth,
+            gender: data.gender,
+            phoneNumber: normalizedPhone,
+            contactEmail: data.contactEmail,
+            city: data.city,
+            address: data.address,
+            maritalStatus: data.maritalStatus,
+            occupation: data.occupation ?? null,
+            ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
+        },
+    });
+
+    await CacheService.delete(cacheKeys.userMe(userId));
+
+    wideLogger.addCtx('complete_profile_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        message: 'Profile completed successfully!',
+        profile,
+    });
+});
+
+// GET /api/v1/onboarding/get-profile
+export const getProfile = catchAsync(async(req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'get_profile');
+    const userId = req.user?.id;
+
+    if(!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    };
+
+    wideLogger.addCtx('user_id', userId);
+
+    const profile = await prisma.memberProfile.findUnique({
+        where: { memberId: userId },
+    });
+
+    if(!profile) {
+        wideLogger.addCtx('get_profile_result', 'not_found');
+        throw new AppError('Profile not completed yet.', 404, 'PROFILE_NOT_FOUND');
+    };
+
+    wideLogger.addCtx('get_profile_result', 'success');
+    return res.status(200).json({
+        status: 'success',
+        profile,
+    });
+});
 
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 
@@ -142,7 +278,7 @@ const requirePriorStep = (draft: ChurchOnboardingDraft, nextStep: 2 | 3 | 4): vo
     }
 };
 
-// PATCH /api/v1/onboarding/church/step-1
+// PATCH /api/v1/onboarding/save-onboarding-step-1
 export const saveOnboardingStep1 = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'save_onboarding_step_1');
     const userId = req.user?.id;
@@ -167,7 +303,7 @@ export const saveOnboardingStep1 = catchAsync(async (req: AuthenticatedRequest, 
     });
 });
 
-// PATCH /api/v1/onboarding/church/step-2
+// PATCH /api/v1/onboarding/save-onboarding-step-2
 export const saveOnboardingStep2 = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'save_onboarding_step_2');
     const userId = req.user?.id;
@@ -196,7 +332,7 @@ export const saveOnboardingStep2 = catchAsync(async (req: AuthenticatedRequest, 
     });
 });
 
-// PATCH /api/v1/onboarding/church/step-3 (multipart/form-data — logo upload)
+// PATCH /api/v1/onboarding/save-onboarding-step-3 (multipart/form-data — logo upload)
 export const saveOnboardingStep3 = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'save_onboarding_step_3');
     const userId = req.user?.id;
@@ -231,7 +367,7 @@ export const saveOnboardingStep3 = catchAsync(async (req: AuthenticatedRequest, 
     });
 });
 
-// PATCH /api/v1/onboarding/church/step-4
+// PATCH /api/v1/onboarding/save-onboarding-step-4
 export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'save_onboarding_step_4');
     const userId = req.user?.id;
@@ -263,7 +399,7 @@ export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, 
     });
 });
 
-// GET /api/v1/onboarding/church/draft
+// GET /api/v1/onboarding/get-onboarding-draft
 export const getOnboardingDraft = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'get_onboarding_draft');
     const userId = req.user?.id;
@@ -284,7 +420,7 @@ export const getOnboardingDraft = catchAsync(async (req: AuthenticatedRequest, r
     });
 });
 
-// POST /api/v1/onboarding/church/complete
+// POST /api/v1/onboarding/complete-church-onboarding
 export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'complete_church_onboarding');
     const superAdminId = req.user?.id;
