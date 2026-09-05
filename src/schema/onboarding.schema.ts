@@ -70,7 +70,7 @@ export const customGroupSchema = z.object({
 
 export const step4Schema = z.object({
     ministryIds: z.array(z.uuid('Invalid ministry id')).default([]),
-    deparmentIds: z.array(z.uuid('Invalid deparment id')).default([]),
+    departmentIds: z.array(z.uuid('Invalid department id')).default([]),
     customGroups: z.array(customGroupSchema).default([]),
 });
 
@@ -125,5 +125,5 @@ export const completeProfileSchema = z.object({
     maritalStatus: z.enum(['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', 'PREFER_NOT_TO_SAY']),
     occupation: z.string().trim().max(100).optional(),
     ministry: z.string().trim().max(100).optional(),
-    deparment: z.string().trim().max(100).optional(),
+    department: z.string().trim().max(100).optional(),
 });

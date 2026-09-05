@@ -19,7 +19,7 @@ import type {
 
 // GET /api/v1/church/:churchId/church-groups
 export const listChurchGroups = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
-    wideLogger.addCtx('action', 'list_churche_groups');
+    wideLogger.addCtx('action', 'list_church_groups');
 
     const { churchId } = req.params as { churchId?: string };
     const userId = req.user?.id;
@@ -57,13 +57,13 @@ export const listChurchGroups = catchAsync(async (req: AuthenticatedRequest, res
     return res.status(200).json({
         status: 'success',
         ministries: ministries,
-        deparments: departments,
+        departments: departments,
     });
 });
 
 // GET /api/v1/church/:name
 export const searchChurch = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
-    wideLogger.addCtx('action', 'list_churche_groups');
+    wideLogger.addCtx('action', 'list_church_groups');
 
     const { name } = req.params as { name?: string };
     const userId = req.user?.id;
@@ -82,11 +82,8 @@ export const searchChurch = catchAsync(async (req: AuthenticatedRequest, res: Re
         }
     });
 
-    if(!church){
-        return res.status(404).json({
-            status: 'success',
-            message: 'Church has not found.',
-        })
+    if (!church) {
+        throw new AppError('Church not found.', 404, 'CHURCH_NOT_FOUND');
     };
 
     wideLogger.addCtx('list_churches_group', 'success');

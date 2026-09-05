@@ -105,7 +105,7 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
             maritalStatus: data.maritalStatus,
             occupation: data.occupation ?? null,
             ministry: data.ministry ?? null,
-            deparment: data.deparment ?? null,
+            department: data.department ?? null,
             ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
         },
         update: {
@@ -119,7 +119,7 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
             maritalStatus: data.maritalStatus,
             occupation: data.occupation ?? null,
             ministry: data.ministry ?? null,
-            deparment: data.deparment ?? null,
+            department: data.department ?? null,
             ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
         },
     });
@@ -251,7 +251,7 @@ const hasOnboardingStep3 = (draft: ChurchOnboardingDraft): boolean =>
 // Ministries are optional in content, so step-4 counts as complete once it has
 // been saved (both keys present in the draft, even if empty arrays).
 const hasOnboardingStep4 = (draft: ChurchOnboardingDraft): boolean =>
-    Array.isArray(draft.ministryIds) && Array.isArray(draft.customGroups);
+    Array.isArray(draft.ministryIds) || Array.isArray(draft.departmentIds) || Array.isArray(draft.customGroups);
 
 /**
  * Ensures every step BEFORE `nextStep` is already saved in the cache draft.
@@ -303,7 +303,7 @@ export const saveOnboardingStep1 = catchAsync(async (req: AuthenticatedRequest, 
     });
 
     if(existingName){
-        throw new AppError('A church with this name already exits!', 400, 'BAD_REQUEST');
+        throw new AppError('A church with this name already exists!', 400, 'BAD_REQUEST');
     };
 
     const key = cacheKeys.churchOnboardingDraft(userId);
@@ -403,7 +403,7 @@ export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, 
     const merged: ChurchOnboardingDraft = {
         ...draft,
         ministryIds: data.ministryIds,
-        departmentIds: data.deparmentIds,
+        departmentIds: data.departmentIds,
         customGroups: data.customGroups ?? [],
     };
 

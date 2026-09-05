@@ -52,21 +52,19 @@ const resolveChurchFromMembership = async (req: AuthenticatedRequest): Promise<s
     return member.churchId;
 };
 
-// GET /api/v1/church Submit a church request
+// GET /api/v1/churches/:churchId/church-groups - List church groups
 router.get( 
     '/:churchId/church-groups',
     authenticateToken as RequestHandler,
     churchRequestLimiter,
-    validateBody(churchGroupsSchema),
     listChurchGroups as RequestHandler,
 );
 
-// GET /api/v1/church - Submit a church request
+// GET /api/v1/churches/by-name/:name - Search church by exact name
 router.get(
-    '/:name',
+    '/by-name/:name',
     authenticateToken as RequestHandler,
     churchRequestLimiter,
-    validateBody(searchChurchSchema),
     searchChurch as RequestHandler,
 );
 
