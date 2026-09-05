@@ -103,6 +103,8 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
             address: data.address,
             maritalStatus: data.maritalStatus,
             occupation: data.occupation ?? null,
+            ministry: data.ministry ?? null,
+            deparment: data.deparment ?? null,
             ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
         },
         update: {
@@ -115,6 +117,8 @@ export const completeProfile = catchAsync(async(req: AuthenticatedRequest, res: 
             address: data.address,
             maritalStatus: data.maritalStatus,
             occupation: data.occupation ?? null,
+            ministry: data.ministry ?? null,
+            deparment: data.deparment ?? null,
             ...(profilePhotoUrl ? { profilePhotoUrl } : {}),
         },
     });
@@ -387,6 +391,7 @@ export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, 
     const merged: ChurchOnboardingDraft = {
         ...draft,
         ministryIds: data.ministryIds,
+        deparmentIds: data.deparmentIds,
         customMinistries: data.customMinistries,
     };
 
