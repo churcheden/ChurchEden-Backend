@@ -295,6 +295,17 @@ export const saveOnboardingStep1 = catchAsync(async (req: AuthenticatedRequest, 
     wideLogger.addCtx('user_id', userId);
 
     const data = req.body as Step1Input;
+
+    const existingName = await prisma.church.findUnique({
+        where: {
+            name: data.churchName,
+        }
+    });
+
+    if(existingName){
+        throw new AppError('A church with this name already exits!', 400, 'BAD_REQUEST');
+    };
+
     const key = cacheKeys.churchOnboardingDraft(userId);
     const existing = await CacheService.get<ChurchOnboardingDraft>(key);
     const draft: ChurchOnboardingDraft = { ...(existing ?? {}), ...data };

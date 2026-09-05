@@ -17,6 +17,86 @@ import type {
     UnbanUserInput,
 } from '../schema/church.schema.js';
 
+// GET /api/v1/church/:churchId/church-groups
+export const listChurchGroups = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'list_churche_groups');
+
+    const { churchId } = req.params as { churchId?: string };
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    };
+
+    if (!churchId) {
+        throw new AppError('Church id is required!', 400, 'MISSING_CHURCH_ID');
+    };
+
+    const ministries = await prisma.churchGroup.findMany({
+        where: {
+            churchId: churchId,
+            type: 'MINISTRY'
+        }
+    });
+
+    const departments = await prisma.churchGroup.findMany({
+        where: {
+            churchId: churchId,
+            type: 'DEPARTMENT'
+        }
+    });
+
+    if(!ministries || !departments){
+        return res.status(200).json({
+            status: 'success',
+            message: 'Church has no ministries or deparments.',
+        })
+    };
+
+    wideLogger.addCtx('list_churches_group', 'success');
+    return res.status(200).json({
+        status: 'success',
+        ministries: ministries,
+        deparments: departments,
+    });
+});
+
+// GET /api/v1/church/:name
+export const searchChurch = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
+    wideLogger.addCtx('action', 'list_churche_groups');
+
+    const { name } = req.params as { name?: string };
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new AppError('Unauthorized user!', 401, 'UNAUTHORIZED');
+    };
+
+    if (!name) {
+        throw new AppError('Church name is required!', 400, 'MISSING_CHURCH_ID');
+    };
+
+    const church = await prisma.church.findUnique({
+        where: {
+            name: name,
+        }
+    });
+
+    if(!church){
+        return res.status(404).json({
+            status: 'success',
+            message: 'Church has not found.',
+        })
+    };
+
+    wideLogger.addCtx('list_churches_group', 'success');
+    return res.status(200).json({
+        status: 'success',
+        church: church,
+    });
+});
+
+
 // GET /api/v1/churches — public directory of registered churches
 export const listChurches = catchAsync(async (req: AuthenticatedRequest, res: Response) => {
     wideLogger.addCtx('action', 'list_churches');

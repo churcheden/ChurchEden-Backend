@@ -100,7 +100,7 @@ model Church {
   id           String     @id @default(uuid())
   superAdminId String     @unique
   superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
-  name         String
+  name         String @unique
   denomination     String // free text — accepts preset or custom value identically
   congregationSize CongregationSize
   foundedYear      Int?

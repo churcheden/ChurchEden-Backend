@@ -19,6 +19,14 @@ export const churchRequestSchema = z.object({
 
 export type ChurchRequestInput = z.infer<typeof churchRequestSchema>;
 
+export const churchGroupsSchema = z.object({
+    churchId: z.uuid('Invalid church id'),
+});
+
+export const searchChurchSchema = z.object({
+    name: z.string(),
+});
+
 export const joinRequestSchema = z.object({
     churchId: z.uuid('Invalid church id'),
 });

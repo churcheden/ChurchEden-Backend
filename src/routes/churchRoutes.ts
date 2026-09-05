@@ -3,7 +3,7 @@ import { authenticateToken, type AuthenticatedRequest } from '../middleware/auth
 import { requireChurchRole, requireSuperAdmin } from '../middleware/churchRole.middleware.js';
 import { AppError } from '../utils/AppError.js';
 import { validateBody, validateQuery } from '../middleware/validation.middleware.js';
-import { createChurchRequest } from '../controllers/churchController.js';
+import { createChurchRequest, searchChurch } from '../controllers/churchController.js';
 import { churchRequestSchema } from '../schema/church.schema.js';
 import { churchRequestLimiter } from '../middleware/rateLimiter.middleware.js';
 import { prisma } from '../config/prisma.js';
@@ -14,6 +14,7 @@ import {
     listChurches,
 } from '../controllers/churchController.js';
 import {
+    listChurchGroups,
     submitJoinRequest,
     getJoinRequests,
     approveJoinRequest,
@@ -23,6 +24,7 @@ import {
     cancelJoinRequest,
 } from '../controllers/churchController.js';
 import {
+    searchChurchSchema,
     approveJoinRequestSchema,
     banUserSchema,
     cancelJoinRequestSchema,
@@ -30,6 +32,7 @@ import {
     joinRequestSchema,
     rejectJoinRequestSchema,
     unbanUserSchema,
+    churchGroupsSchema,
 } from '../schema/church.schema.js';
 
 const router = Router();
@@ -49,7 +52,25 @@ const resolveChurchFromMembership = async (req: AuthenticatedRequest): Promise<s
     return member.churchId;
 };
 
-// POST /api/v1/church-requests - Submit a church request
+// GET /api/v1/church Submit a church request
+router.get( 
+    '/:churchId/church-groups',
+    authenticateToken as RequestHandler,
+    churchRequestLimiter,
+    validateBody(churchGroupsSchema),
+    listChurchGroups as RequestHandler,
+);
+
+// GET /api/v1/church - Submit a church request
+router.get(
+    '/:name',
+    authenticateToken as RequestHandler,
+    churchRequestLimiter,
+    validateBody(searchChurchSchema),
+    searchChurch as RequestHandler,
+);
+
+// POST /api/v1/church - Submit a church request
 router.post(
     '/create-church-request',
     authenticateToken as RequestHandler,
