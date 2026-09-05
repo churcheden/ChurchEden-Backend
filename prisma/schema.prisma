@@ -64,6 +64,11 @@ enum ChurchPlan {
   CORE
 }
 
+enum ChurchGroupType {
+  MINISTRY
+  DEPARTMENT
+}
+
 model SuperAdmin {
   id       String  @id @default(uuid())
   email    String  @unique
@@ -121,7 +126,7 @@ model Church {
 
   members      Member[]
   serviceTimes ServiceTime[]
-  ministries   ChurchMinistry[]
+  groups   ChurchGroup[]
 
   @@map("Churches")
 }
@@ -139,12 +144,12 @@ model ServiceTime {
   @@map("ServiceTimes")
 }
 
-model ChurchMinistry {
+model ChurchGroup {
   id          String  @id @default(uuid())
   churchId    String
   church      Church  @relation(fields: [churchId], references: [id], onDelete: Cascade)
   name        String
-  type        String // "MINISTRY" | "DEPARTMENT"
+  type        ChurchGroupType
   description String?
   icon        String?
   isCustom    Boolean @default(false)

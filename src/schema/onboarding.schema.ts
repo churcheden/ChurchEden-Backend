@@ -61,7 +61,7 @@ export const step3Schema = z.object({
     ),
 });
 
-export const customMinistrySchema = z.object({
+export const customGroupSchema = z.object({
     name: z.string().trim().min(1).max(100),
     type: z.enum(['MINISTRY', 'DEPARTMENT']),
     description: z.string().trim().max(255).optional(),
@@ -70,7 +70,8 @@ export const customMinistrySchema = z.object({
 
 export const step4Schema = z.object({
     ministryIds: z.array(z.uuid('Invalid ministry id')).default([]),
-    customMinistries: z.array(customMinistrySchema).default([]),
+    deparmentIds: z.array(z.uuid('Invalid deparment id')).default([]),
+    customGroups: z.array(customGroupSchema).default([]),
 });
 
 export type Step1Input = z.infer<typeof step1Schema>;
@@ -84,7 +85,7 @@ export interface ChurchServiceTimeDraft {
     time: string;
 }
 
-export interface ChurchCustomMinistryDraft {
+export interface ChurchCustomGroupDraft {
     name: string;
     type: 'MINISTRY' | 'DEPARTMENT';
     description?: string | undefined;
@@ -108,7 +109,8 @@ export interface ChurchOnboardingDraft {
     serviceTimes?: ChurchServiceTimeDraft[];
     logoUrl?: string;
     ministryIds?: string[];
-    customMinistries?: ChurchCustomMinistryDraft[];
+    departmentIds?: string[];
+    customGroups?: ChurchCustomGroupDraft[];
 };
 
 export const completeProfileSchema = z.object({
@@ -122,4 +124,6 @@ export const completeProfileSchema = z.object({
     address: z.string().trim().min(1).max(255),
     maritalStatus: z.enum(['SINGLE', 'MARRIED', 'DIVORCED', 'WIDOWED', 'PREFER_NOT_TO_SAY']),
     occupation: z.string().trim().max(100).optional(),
+    ministry: z.string().trim().max(100).optional(),
+    deparment: z.string().trim().max(100).optional(),
 });

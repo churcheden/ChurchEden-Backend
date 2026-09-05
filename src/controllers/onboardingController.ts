@@ -20,7 +20,8 @@ import {
     type Step4Input,
     type ChurchOnboardingDraft,
 } from '../schema/onboarding.schema.js';
-import { PREDEFINED_MINISTRIES } from '../data/predefinedMinistries.js';
+import { PREDEFINED_GROUPS } from '../data/predefinedMinistries.js';
+import type { ChurchGroupType } from '@prisma/client';
 
 type CompleteProfileInput = ReturnType<typeof completeProfileSchema.parse>;
 
@@ -250,7 +251,7 @@ const hasOnboardingStep3 = (draft: ChurchOnboardingDraft): boolean =>
 // Ministries are optional in content, so step-4 counts as complete once it has
 // been saved (both keys present in the draft, even if empty arrays).
 const hasOnboardingStep4 = (draft: ChurchOnboardingDraft): boolean =>
-    Array.isArray(draft.ministryIds) && Array.isArray(draft.customMinistries);
+    Array.isArray(draft.ministryIds) && Array.isArray(draft.customGroups);
 
 /**
  * Ensures every step BEFORE `nextStep` is already saved in the cache draft.
@@ -391,8 +392,8 @@ export const saveOnboardingStep4 = catchAsync(async (req: AuthenticatedRequest, 
     const merged: ChurchOnboardingDraft = {
         ...draft,
         ministryIds: data.ministryIds,
-        deparmentIds: data.deparmentIds,
-        customMinistries: data.customMinistries,
+        departmentIds: data.deparmentIds,
+        customGroups: data.customGroups ?? [],
     };
 
     await CacheService.set(key, merged, CHURCH_ONBOARDING_DRAFT_TTL_SECONDS);
@@ -462,30 +463,31 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
         );
     }
 
-    const ministryById = new Map(PREDEFINED_MINISTRIES.map((ministry) => [ministry.id, ministry]));
-    const invalidIds = (draft.ministryIds ?? []).filter((id) => !ministryById.has(id));
-    if (invalidIds.length > 0) {
-        wideLogger.addCtx('complete_church_onboarding', 'invalid_ministry_id');
-        throw new AppError('One or more selected ministries are not recognized.', 400, 'INVALID_MINISTRY_ID');
-    }
+    const groupById = new Map(PREDEFINED_GROUPS.map((group) => [group.id, group]));
+    const invalidMinIds = (draft.ministryIds ?? []).filter((id) => !groupById.has(id));
+    const invalidDepIds = (draft.departmentIds ?? []).filter((id) => !groupById.has(id));
+    if (invalidMinIds.length > 0 || invalidDepIds.length > 0) {
+        wideLogger.addCtx('complete_church_onboarding', 'invalid_group_id');
+        throw new AppError('One or more selected groups are not recognized.', 400, 'INVALID_GROUP_ID');
+    };
 
-    interface MinistryRow {
+    interface GroupRow {
         name: string;
-        type: 'MINISTRY' | 'DEPARTMENT';
+        type: ChurchGroupType;
         description: string | null;
         icon: string | null;
         isCustom: boolean;
     }
 
-    const resolvedMinistries: MinistryRow[] = [];
+    const resolvedGroups: GroupRow[] = [];
     const takenNames = new Set<string>();
 
     for (const id of draft.ministryIds ?? []) {
-        const predefined = ministryById.get(id)!;
+        const predefined = groupById.get(id)!;
         const normalized = predefined.name.toLowerCase();
         if (takenNames.has(normalized)) continue;
         takenNames.add(normalized);
-        resolvedMinistries.push({
+        resolvedGroups.push({
             name: predefined.name,
             type: predefined.type,
             description: predefined.description,
@@ -494,7 +496,21 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
         });
     }
 
-    for (const custom of draft.customMinistries ?? []) {
+    for (const id of draft.departmentIds ?? []) {
+        const predefined = groupById.get(id)!;
+        const normalized = predefined.name.toLowerCase();
+        if (takenNames.has(normalized)) continue;
+        takenNames.add(normalized);
+        resolvedGroups.push({
+            name: predefined.name,
+            type: predefined.type,
+            description: predefined.description,
+            icon: predefined.icon,
+            isCustom: false,
+        });
+    }
+
+    for (const custom of draft.customGroups ?? []) {
         const normalized = custom.name.toLowerCase();
         if (takenNames.has(normalized)) {
             throw new AppError(
@@ -504,7 +520,7 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             );
         }
         takenNames.add(normalized);
-        resolvedMinistries.push({
+        resolvedGroups.push({
             name: custom.name,
             type: custom.type,
             description: custom.description ?? null,
@@ -546,9 +562,9 @@ export const completeChurchOnboarding = catchAsync(async (req: AuthenticatedRequ
             });
         }
 
-        if (resolvedMinistries.length > 0) {
-            await tx.churchMinistry.createMany({
-                data: resolvedMinistries.map((ministry) => ({
+        if (resolvedGroups.length > 0) {
+            await tx.churchGroup.createMany({
+                data: resolvedGroups.map((ministry) => ({
                     churchId: created.id,
                     name: ministry.name,
                     type: ministry.type,
